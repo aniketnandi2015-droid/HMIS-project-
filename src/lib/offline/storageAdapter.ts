@@ -24,6 +24,7 @@ export class LocalStorageAdapter {
   private static readonly CROSS_SELL_EVENTS_KEY = 'pharmaassist_cross_sell_events';
   private static readonly UNMET_DEMAND_KEY = 'pharmaassist_unmet_demand';
   private static readonly SYNC_QUEUE_KEY = 'pharmaassist_sync_queue';
+  private static readonly DISCREPANCIES_KEY = 'pharmaassist_discrepancies';
 
   private static getItem(key: string): string | null {
     if (typeof window !== 'undefined' && window.localStorage) {
@@ -172,6 +173,21 @@ export class LocalStorageAdapter {
 
   public static saveSyncQueue(items: SyncQueueItem[]): void {
     this.setItem(this.SYNC_QUEUE_KEY, JSON.stringify(items));
+  }
+
+  public static getDiscrepancies(): import('../types/pharmaassist').StockDiscrepancyRecord[] {
+    const raw = this.getItem(this.DISCREPANCIES_KEY);
+    return raw ? JSON.parse(raw) : [];
+  }
+
+  public static saveDiscrepancies(records: import('../types/pharmaassist').StockDiscrepancyRecord[]): void {
+    this.setItem(this.DISCREPANCIES_KEY, JSON.stringify(records));
+  }
+
+  public static appendDiscrepancy(record: import('../types/pharmaassist').StockDiscrepancyRecord): void {
+    const list = this.getDiscrepancies();
+    list.unshift(record);
+    this.saveDiscrepancies(list);
   }
 
   /**

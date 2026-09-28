@@ -2,7 +2,7 @@
 ## PharmaAssist — AI-Augmented Point-of-Sale, Inventory and Analytics System for Retail Pharmacy
 
 Reference standards: IEEE 830-1998, ISO/IEC/IEEE 29148:2018  
-Document version: 2.2 (Single-Operator Scope; Mobile-First Web Platform; Advanced Analytics & Smart OCR)
+Document version: 2.3 (Single-Operator Scope; Mobile-First Web Platform; POS Cart, Discrepancy Reconciliation & Motion System)
 
 ---
 
@@ -18,41 +18,48 @@ Document version: 2.2 (Single-Operator Scope; Mobile-First Web Platform; Advance
 
 ---
 
-### 2. Controlled Operational Extensions (v2.2)
+### 2. Controlled Operational Extensions (v2.2 & v2.3)
 
-#### 2.1 Smart OCR Package Scanner (FR-SCAN-01..04)
-- **FR-SCAN-01 (Packaging Text Parsing):** System parses unstructured packaging text and image OCR output using deterministic regex heuristics to extract brand, generic, strength, dosage form, batch number, lot number, manufacturing date, expiry date, and barcode (EAN/UPC/GTIN).
-- **FR-SCAN-02 (Candidate Matching & Scoring):** Extracted packaging fields are matched against the authoritative `DrugMaster` catalog and active `StockBatch` ledger with a weighted confidence score (0–100%).
-- **FR-SCAN-03 (Human Operator Gate):** OCR is strictly advisory (`CON-04`, `CON-05`). The operator must review and confirm the candidate mapping prior to dispatch.
-- **FR-SCAN-04 (Expiry Pre-Alert):** If a scanned batch is within the 90-day expiry threshold or expired, an immediate warning alert is surfaced during the scan.
+#### 2.1 Commercial-Style Mobile POS Cart (FR-CRT-01..05)
+- **FR-CRT-01 (Detect & Stage):** When a medicine is identified via search, barcode, or smart OCR scan, it presents a product card for operator confirmation and quantity selection rather than immediately triggering single-item dispatch.
+- **FR-CRT-02 (Multi-Item Session State):** Allows multiple medications for the same customer to be staged in a typed `CartItem` basket without mutating authoritative stock quantities.
+- **FR-CRT-03 (Mobile Cart Drawer):** Mobile counter provides a persistent bottom summary bar (`Cart X items • ₹Total`) and bottom sheet drawer with line quantity adjustment (`-` / `+`), discount view, and line deletion.
+- **FR-CRT-04 (Consolidated Checkout Gate):** All basket items pass through consolidated clinical safety and prescription verification before dispatch. Hard contraindications or unverified Rx medications block basket dispatch.
+- **FR-CRT-05 (Consolidated Atomic Dispatch):** Basket dispatch executes atomically across all line items, decrementing authoritative batch stock and recording transactions together (`FR-POS-06`).
 
-#### 2.2 True Time-Series Forecasting (FR-FCS-01..05)
-- **FR-FCS-01 (Holt-Winters / ETS Engine):** Generates 7-day and 14-day demand forecasts incorporating trend and seasonality, maintaining zero-padded daily sales arrays.
+#### 2.2 Stock Discrepancy Physical-Count Reconciliation (FR-DISC-01..05)
+- **FR-DISC-01 (Count Comparison):** Captures physical counted stock against authoritative system quantity:
+  $$\text{Discrepancy Delta} = \text{Physical Count} - \text{System Quantity}$$
+- **FR-DISC-02 (Materiality Classification):** Computes discrepancy percentage:
+  $$\text{Discrepancy \%} = \frac{|\text{Physical} - \text{System}|}{\max(\text{System}, 1)} \times 100$$
+  Categorizes materiality into `none` (0%), `minor` (<=5%), `material` (<=10%), and `significant` (>10%).
+- **FR-DISC-03 (Mandatory Reason & Notes):** All discrepancies require a standard reason code (`physical_count_correction`, `damage_breakage`, `expired_stock`, `missing_unaccounted`, `receiving_discrepancy`, `data_entry_correction`, `other`). Significant discrepancies (>10%) and reason `other` require a mandatory explanatory audit note.
+- **FR-DISC-04 (Authoritative Ledger Mutation):** Discrepancies are reconciled strictly through the authoritative reason-coded stock adjustment path (`apply_stock_adjustment` / delta), updating downstream stock, threshold alerts, and procurement recommendations without rewriting sales history.
+- **FR-DISC-05 (Audit Logging & Insights Visibility):** Discrepancy audit records are saved to the local store and flagged under Insights ("What needs attention today").
+
+#### 2.3 Smart OCR Package Scanner (FR-SCAN-01..04)
+- **FR-SCAN-01 (Packaging Text Parsing):** System parses unstructured packaging text using deterministic regex heuristics to extract brand, generic, strength, dosage form, batch number, lot number, manufacturing date, expiry date, and barcode.
+- **FR-SCAN-02 (Candidate Matching & Scoring):** Extracted packaging fields are matched against `DrugMaster` and `StockBatch` with a multi-factor confidence score.
+- **FR-SCAN-03 (Operator Gate):** OCR is strictly advisory (`CON-04`, `CON-05`). The operator must confirm candidate mapping.
+- **FR-SCAN-04 (Expiry Pre-Alert):** Scanned batches within the 90-day expiry threshold or expired trigger an immediate warning alert.
+
+#### 2.4 True Time-Series Forecasting (FR-FCS-01..05)
+- **FR-FCS-01 (Holt-Winters / ETS Engine):** Generates 7-day and 14-day forecasts modeling trend and seasonality with zero-padded daily timelines.
 - **FR-FCS-02 (Rolling Backtest Accuracy):** Calculates rolling Mean Absolute Percentage Error (MAPE) against historical test windows (`NFR-REL-01`).
 - **FR-FCS-03 (Cold-Start Fallback):** When active transaction history is under 30 days (`BR-05`), falls back deterministically to configured reorder thresholds (`BR-01`).
 - **FR-FCS-04 (Segmented Breakdown):** Forecasts segment by visit type (`OTC` vs `Prescription`) and indication category.
-- **FR-FCS-05 (Explainability):** Provides natural-language forecast rationale and confidence intervals.
 
-#### 2.3 Clinical Indication Categorization (FR-IND-01..03)
-- **FR-IND-01 (Standard Taxonomy):** Classifies medications and unmet demand into standard categories: `Respiratory & Flu`, `Analgesic & Pain Management`, `Gastrointestinal & Antacid`, `Cardiovascular & Metabolic`, `Antibiotics & Anti-infectives`, and `General Health`.
-- **FR-IND-02 (Demand Tracking):** Unmet customer demand logs include indication categories to guide disease-aware inventory replenishment.
+#### 2.5 Clinical Indication Categorization (FR-IND-01..03)
+- Classifies medications and unmet demand into standard categories: `Respiratory & Flu`, `Analgesic & Pain Management`, `Gastrointestinal & Antacid`, `Cardiovascular & Metabolic`, `Antibiotics & Anti-infectives`, and `General Health`.
 
-#### 2.4 Predictive Cross-Selling (FR-CRS-01..03)
-- **FR-CRS-01 (Conditional Probability):** Ranks cross-sell suggestions using conditional probability $P(B|A)$, co-occurrence support count, and recency weighting.
-- **FR-CRS-02 (Availability Gate):** Suppresses recommendations for out-of-stock items.
-- **FR-CRS-03 (Clinical Explanation):** Every recommendation displays an evidence-based explanation (e.g., oral rehydration paired with antibiotics).
+#### 2.6 Predictive Cross-Selling (FR-CRS-01..03)
+- Ranks suggestions using conditional probability $P(B|A)$, support count, and stock availability verification with natural-language clinical rationales.
 
-#### 2.5 Actionable Deep-Linked Alerts (FR-ALT-01..03)
-- **FR-ALT-01 (Drug-Specific Notifications):** Low-stock and near-expiry alerts are generated per drug and batch.
-- **FR-ALT-02 (Deep Linking):** Low-stock alerts link directly to the procurement tab (`Create PO`), while near-expiry alerts link to the inventory tab (`Apply Reason-Coded Adjustment`).
-
-#### 2.6 Supply Chain Integrity (FR-PRQ-01..04)
-- **FR-PRQ-01 (On-Order Deduplication):** Deducts quantities in pending purchase orders (`sent`, `confirmed`, `drafted`) from recommended reorders to prevent over-ordering.
-- **FR-PRQ-02 (Real Quality Tracking):** Tracks real supplier quality events (damaged, expired on arrival, quantity discrepancies) without synthetic random numbers.
-
-#### 2.7 UI Theme & Currency (FR-UI-01..02)
-- **FR-UI-01 (Dark Navy Theme):** Unified dark navy (`#0a0f1d`) and cyan/teal interface engineered for low-glare retail environments.
-- **FR-UI-02 (Currency Standard):** Standardized Indian Rupee (`₹`) monetary representation across all views, receipts, and reports.
+#### 2.7 UI Theme, Motion & Currency (FR-UI-01..03, NFR-MOT-01..03)
+- **FR-UI-01 (Demo Palette):** Semantic CSS tokens (`--pa-bg: #083f4b`, `--pa-surface: #0b1728`, `--pa-border: #23455b`, `--pa-primary: #19a9ff`, `--pa-success: #21c77a`, `--pa-warning: #f2b51d`, `--pa-danger: #d9364f`).
+- **FR-UI-02 (Currency Standard):** Standardized Indian Rupee (`₹`) monetary representation across all views and receipts.
+- **NFR-MOT-01 (Fluid Motion System):** Smooth cubic-out number interpolation via `AnimatedNumber` (300–400ms), active touch feedback, and restrained state pulses.
+- **NFR-MOT-02 (Reduced-Motion Compliance):** Strictly respects `@media (prefers-reduced-motion: reduce)`, immediately snapping values to final targets without visual distortion.
 
 ---
 

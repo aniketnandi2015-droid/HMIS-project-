@@ -1,8 +1,8 @@
 # Software Design Document (SDD)
 ## PharmaAssist — AI-Augmented Point-of-Sale, Inventory and Analytics System for Retail Pharmacy
 
-Document version: 0.2  
-SRS baseline: PharmaAssist SRS v2.2
+Document version: 0.3  
+SRS baseline: PharmaAssist SRS v2.3
 
 ---
 
@@ -12,15 +12,20 @@ PharmaAssist is engineered as a mobile-first, offline-capable Progressive Web Ap
 
 ```mermaid
 flowchart TD
-    subgraph Presentation_Layer["Presentation Layer (Dark Navy #0a0f1d)"]
-        UI_POS["CounterPOS.tsx (Touch-Optimized)"]
+    subgraph Presentation_Layer["Presentation Layer (Dark Teal / Navy #083f4b / #0b1728)"]
+        UI_POS["CounterPOS.tsx (Search, Scan, Product Card)"]
+        UI_CART["CartDrawer.tsx (Multi-Item Basket & Consolidated Gate)"]
+        UI_DISC["StockDiscrepancyModal.tsx (Physical-Count Reconciliation)"]
         UI_SCAN["BarcodeScannerModal.tsx (Smart OCR & Barcode)"]
-        UI_INS["InsightsScreen.tsx (Sparklines & Deep-Linked Alerts)"]
-        UI_INV["InventoryScreen.tsx (Reason-Coded Adjustments)"]
-        UI_PROC["ProcurementScreen.tsx (On-Order Deduplication)"]
+        UI_INS["InsightsScreen.tsx (Attention Today & Animated KPIs)"]
+        UI_INV["InventoryScreen.tsx (Batch Cards & Discrepancy Triggers)"]
+        UI_PROC["ProcurementScreen.tsx (Orders & On-Order Deduplication)"]
+        UI_NAV["Navbar.tsx (Fixed Safe-Area Bottom Nav & Cart Badge)"]
     end
 
     subgraph Application_Domain_Services["Application & Domain Services (Pure TypeScript)"]
+        SVC_CART["CartService (Basket Calculations & Multi-Line Safety)"]
+        SVC_DISC["DiscrepancyService (Count Delta & Materiality % Classifier)"]
         SVC_OCR["SmartScanService (Regex Heuristics & Matcher)"]
         SVC_FCS["TimeSeriesForecastService (Holt-Winters / ETS & MAPE)"]
         SVC_CRS["CrossSellService (Conditional Probability P(B|A))"]
@@ -36,20 +41,23 @@ flowchart TD
         DB_OFFLINE["IndexedDB / LocalStorageAdapter (Offline Shell Cache)"]
     end
 
-    UI_POS --> SVC_SAFE
-    UI_POS --> SVC_PRICE
-    UI_POS --> SVC_CRS
+    UI_POS --> UI_CART
     UI_POS --> UI_SCAN
+    UI_CART --> SVC_CART
+    SVC_CART --> SVC_SAFE
+    SVC_CART --> SVC_PRICE
+    UI_INV --> UI_DISC
+    UI_DISC --> SVC_DISC
     UI_SCAN --> SVC_OCR
     UI_INS --> SVC_FCS
     UI_INS --> SVC_ALT
     UI_PROC --> SVC_PROC
     SVC_PROC --> SVC_FCS
 
-    SVC_SAFE --> DB_ONLINE
-    SVC_SAFE --> DB_OFFLINE
-    SVC_PRICE --> DB_ONLINE
-    SVC_PRICE --> DB_OFFLINE
+    SVC_CART --> DB_ONLINE
+    SVC_CART --> DB_OFFLINE
+    SVC_DISC --> DB_ONLINE
+    SVC_DISC --> DB_OFFLINE
     SVC_SYNC --> DB_ONLINE
 ```
 
@@ -57,30 +65,34 @@ flowchart TD
 
 ### 2. Domain Decomposition & Key Services
 
-#### 2.1 Smart OCR Package Scanner (`SmartScanService`)
-- Normalizes raw text from camera capture, OCR image pipelines, or keyboard-wedge scanners.
-- Parses batch number (`B.No.`, `BATCH`, `LOT`), expiry date (`EXP MM/YY` or `MM/YYYY`), manufacturing date (`MFG`), strength (e.g., `650mg`, `500mg+125mg`), dosage form (`Tablet`, `Capsule`, `Syrup`), and barcodes (`EAN-13`, `GTIN`).
-- Matches extracted tokens against `DrugMaster` and `StockBatch` with a multi-factor confidence score.
-- Enforces human-in-the-loop review before dispatch (`CON-04`, `CON-05`).
+#### 2.1 Commercial-Style POS Cart (`CartService`)
+- Manages `CartItem` state representing staged medication lines for a single customer.
+- Evaluates line pricing, subtotal, total discount, and grand total in `₹`.
+- Aggregates safety checks across all cart items. Disallows dispatch if any line has an unresolved clinical conflict or unverified prescription.
+- Final dispatch calls authoritative atomic dispatch (`dispatch_transaction_v2` / `atomicLocalDispatch`). Adding items to the cart never mutates stock.
 
-#### 2.2 Time-Series Forecasting (`TimeSeriesForecastService`)
-- Builds continuous, zero-padded daily sales arrays across 7-day and 14-day horizons.
-- Applies double exponential smoothing (Holt-Winters / ETS) modeling level $\alpha=0.3$ and trend $\beta=0.1$.
-- Computes rolling backtest Mean Absolute Percentage Error (MAPE) against historical test windows (`NFR-REL-01`).
-- Enforces cold-start fallback to configured reorder thresholds when history is fewer than 30 days (`BR-05 -> BR-01`).
-- Segments projections by visit type (`OTC` vs `Prescription`) and indication category.
+#### 2.2 Physical-Count Stock Discrepancy (`DiscrepancyService`)
+- Compares physical count with system quantity: $\text{Delta} = \text{Physical} - \text{System}$.
+- Classifies materiality:
+  - $\text{None} = 0\%$
+  - $\text{Minor} \le 5\%$
+  - $\text{Material} \le 10\%$
+  - $\text{Significant} > 10\%$
+- Validates mandatory reason code and requires audit notes for significant discrepancies or reason `other`.
+- Reconciles through authoritative stock adjustment service/RPC (`apply_stock_adjustment`).
 
-#### 2.3 Predictive Cross-Selling (`CrossSellService`)
-- Evaluates co-occurrence pairs with conditional probability $P(B|A) = \frac{\text{Count}(A \cap B)}{\text{Count}(A)}$.
-- Factors in recency weighting and indication affinity.
-- Filters out candidates with zero stock on hand.
-- Produces natural-language clinical rationales for operator transparency.
-
-#### 2.4 Procurement & Inventory Intelligence (`ProcurementService` & `InventoryAlertService`)
-- Calculates net required stock:
-  $$\text{Net Required} = (\text{Threshold} + \text{Forecast} + \text{Unmet Demand}) - (\text{Stock on Hand} + \text{On-Order Stock})$$
-- Deduplicates pending quantities from drafted, sent, and confirmed purchase orders.
-- Generates actionable, deep-linked alerts routing operators to `procurement` (for stockouts) and `inventory` (for expiry write-offs).
+#### 2.3 Motion & Animation Architecture (`AnimatedNumber` & Tokens)
+- Centralized semantic design tokens in `index.css`:
+  - `--pa-bg: #083f4b`
+  - `--pa-surface: #0b1728`
+  - `--pa-surface-raised: #102236`
+  - `--pa-border: #23455b`
+  - `--pa-primary: #19a9ff`
+  - `--pa-success: #21c77a`
+  - `--pa-warning: #f2b51d`
+  - `--pa-danger: #d9364f`
+- Cubic-out numerical interpolation (`AnimatedNumber`) over 300–400ms for KPIs, cart quantities, and totals.
+- Reduced-motion mode (`@media (prefers-reduced-motion: reduce)`) gracefully bypasses animation duration to avoid cognitive strain.
 
 ---
 
@@ -94,9 +106,8 @@ flowchart TD
   - `supplier_quality_event`: Records real delivery on-time status, quantity discrepancies, and quality inspection flags.
   - `cross_sell_event`: Records co-occurrence events with conditional probabilities.
   - `demand_forecast`: Records time-series projections, backtest MAPE, and model versions.
-- **RPC Function `dispatch_transaction_v2`:**
-  - Executes stock validation, stock decrement, transaction creation, item insertion, and leakage flagging in a single atomic database transaction.
-  - Supports indication categorization and client-side optimistic stock version checking.
+- **Stored Procedure `dispatch_transaction_v2`:**
+  - Atomic stock validation, stock decrement, transaction creation, item insertion, and leakage flagging in a single database transaction.
 
 ---
 

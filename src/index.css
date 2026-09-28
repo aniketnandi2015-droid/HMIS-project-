@@ -1,13 +1,28 @@
 @import "tailwindcss";
 
+:root {
+  --pa-bg: #083f4b;
+  --pa-surface: #0b1728;
+  --pa-surface-raised: #102236;
+  --pa-border: #23455b;
+  --pa-text: #f4f8fb;
+  --pa-muted: #8ea5b7;
+  --pa-primary: #19a9ff;
+  --pa-primary-strong: #168ef0;
+  --pa-success: #21c77a;
+  --pa-warning: #f2b51d;
+  --pa-danger: #d9364f;
+}
+
 @layer base {
   * {
     box-sizing: border-box;
   }
   body {
-    background-color: #070d18;
-    color: #e2e8f0;
+    background-color: #0b1728;
+    color: #f4f8fb;
     font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    -webkit-tap-highlight-color: transparent;
   }
 }
 
@@ -20,9 +35,61 @@
   background: #0f172a;
 }
 ::-webkit-scrollbar-thumb {
-  background: #1e293b;
+  background: #23455b;
   border-radius: 4px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #334155;
+  background: #335d79;
+}
+
+/* Fluid spring and pulse animations */
+@keyframes paPulseOnce {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.15); }
+  100% { transform: scale(1); }
+}
+
+@keyframes paWarningGlow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(242, 181, 29, 0); }
+  50% { box-shadow: 0 0 12px 2px rgba(242, 181, 29, 0.4); }
+}
+
+@keyframes paDangerGlow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(217, 54, 79, 0); }
+  50% { box-shadow: 0 0 15px 3px rgba(217, 54, 79, 0.45); }
+}
+
+.animate-pulse-once {
+  animation: paPulseOnce 0.35s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.animate-warning-glow {
+  animation: paWarningGlow 2s ease-in-out infinite;
+}
+
+.animate-danger-glow {
+  animation: paDangerGlow 2s ease-in-out infinite;
+}
+
+/* Active touch feedback */
+.touch-active {
+  transition: transform 0.12s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.12s ease;
+}
+.touch-active:active {
+  transform: scale(0.96);
+  opacity: 0.9;
+}
+
+/* Safe area support for iOS home indicator */
+.safe-bottom {
+  padding-bottom: calc(0.75rem + env(safe-area-inset-bottom, 0px));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, ::before, ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

@@ -9,6 +9,8 @@ import { ContraindicationAlertModal } from './components/ContraindicationAlertMo
 import { BarcodeScannerModal } from './components/BarcodeScannerModal';
 import { ReceiptPrintModal } from './components/ReceiptPrintModal';
 import { WalkthroughModal } from './components/WalkthroughModal';
+import { CartDrawer } from './components/CartDrawer';
+import { StockDiscrepancyModal } from './components/StockDiscrepancyModal';
 
 import {
   DrugMaster,
@@ -23,6 +25,9 @@ import {
   StockAdjustmentReason,
   SmartScanMatchResult,
   IndicationCategory,
+  CartItem,
+  DiscrepancyReasonCode,
+  StockDiscrepancyRecord,
 } from './lib/types/pharmaassist';
 
 import {
@@ -36,6 +41,8 @@ import {
 
 import { LocalStorageAdapter } from './lib/offline/storageAdapter';
 import { OfflineSyncService } from './lib/domain/synchronization/offlineSyncService';
+import { CartService } from './lib/domain/pos/cartService';
+import { DiscrepancyService } from './lib/domain/inventory/discrepancyService';
 import { isSupabaseConfigured, supabase } from './lib/supabase/client';
 import { Language } from './lib/i18n/translations';
 
@@ -62,12 +69,19 @@ export const App: React.FC = () => {
   const [unmetDemands, setUnmetDemands] = useState<UnmetDemand[]>([]);
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
   const [syncQueue, setSyncQueue] = useState<SyncQueueItem[]>([]);
+  const [discrepancies, setDiscrepancies] = useState<StockDiscrepancyRecord[]>([]);
 
-  // 5. Modal States & Active Scans
+  // 5. Commercial-Style POS Cart State (Section 5)
+  const [cartItems, setCartItems] = useState<CartItem[]>([]);
+  const [isCartOpen, setIsCartOpen] = useState(false);
+
+  // 6. Modal States & Active Scans
   const [isScannerOpen, setIsScannerOpen] = useState(false);
   const [scannedMatch, setScannedMatch] = useState<SmartScanMatchResult | null>(null);
   const [receiptPrintTx, setReceiptPrintTx] = useState<Transaction | null>(null);
   const [walkthroughOpen, setWalkthroughOpen] = useState(false);
+  const [isDiscrepancyModalOpen, setIsDiscrepancyModalOpen] = useState(false);
+  const [discrepancyBatchId, setDiscrepancyBatchId] = useState<string | undefined>(undefined);
   const [safetyConflictModal, setSafetyConflictModal] = useState<{
     drug: DrugMaster;
     conflicts: ContraindicationReference[];
@@ -92,6 +106,7 @@ export const App: React.FC = () => {
     const loadedPOs = LocalStorageAdapter.getPurchaseOrders();
     const loadedUnmet = LocalStorageAdapter.getUnmetDemands();
     const loadedQueue = LocalStorageAdapter.getSyncQueue();
+    const loadedDiscrepancies = LocalStorageAdapter.getDiscrepancies();
 
     setDrugs(loadedDrugs.length ? loadedDrugs : initialDrugs);
     setBatches(loadedBatches.length ? loadedBatches : initialBatches);
@@ -102,6 +117,7 @@ export const App: React.FC = () => {
     setPurchaseOrders(loadedPOs);
     setUnmetDemands(loadedUnmet);
     setSyncQueue(loadedQueue);
+    setDiscrepancies(loadedDiscrepancies);
 
     // Online / Offline listeners
     const handleOnline = () => setIsOnline(true);
@@ -116,7 +132,151 @@ export const App: React.FC = () => {
     };
   }, []);
 
-  // Atomic Dispatch Execution (FR-POS-06, FR-INV-01) with Supabase RPC Online & Offline Fallback
+  // Cart Operations (Section 5 & 6)
+  const handleAddToCart = (item: CartItem) => {
+    setCartItems((prev) => {
+      const existingIdx = prev.findIndex(
+        (ci) => ci.drugId === item.drugId && ci.selectedBatchId === item.selectedBatchId
+      );
+
+      if (existingIdx !== -1) {
+        // Increment quantity on existing line item
+        const existing = prev[existingIdx];
+        const newQty = Math.min(existing.quantity + item.quantity, existing.maxAvailableQuantity);
+        const updated = [...prev];
+        updated[existingIdx] = CartService.updateItemQuantity(existing, newQty);
+        return updated;
+      }
+
+      return [item, ...prev];
+    });
+  };
+
+  const handleUpdateCartQuantity = (itemId: string, newQty: number) => {
+    setCartItems((prev) =>
+      prev.map((item) => (item.id === itemId ? CartService.updateItemQuantity(item, newQty) : item))
+    );
+  };
+
+  const handleRemoveCartItem = (itemId: string) => {
+    setCartItems((prev) => prev.filter((item) => item.id !== itemId));
+  };
+
+  const handleTogglePrescriptionSighted = (itemId: string) => {
+    setCartItems((prev) =>
+      prev.map((item) => {
+        if (item.id === itemId) {
+          const newSighted = !item.prescriptionSighted;
+          return {
+            ...item,
+            prescriptionSighted: newSighted,
+            safetyStatus: newSighted ? 'clear' : 'prescription_required',
+          };
+        }
+        return item;
+      })
+    );
+  };
+
+  const handleClearCart = () => {
+    setCartItems([]);
+  };
+
+  // Consolidated Multi-Item Cart Dispatch (Section 7)
+  const handleDispatchCart = () => {
+    if (cartItems.length === 0) return;
+
+    const totals = CartService.calculateTotals(cartItems);
+    if (totals.hasBlockingIssues) {
+      alert(`Cannot dispatch basket:\n${totals.blockingReasons.join('\n')}`);
+      return;
+    }
+
+    const txId = `TX-${Date.now().toString().slice(-6)}`;
+    const txItems = cartItems.map((ci, idx) => ({
+      id: `txi-${Date.now()}-${idx}`,
+      transactionId: txId,
+      drugId: ci.drugId,
+      stockBatchId: ci.selectedBatchId,
+      quantity: ci.quantity,
+      unitPrice: ci.unitPrice,
+      discount: ci.discountAmount,
+      extendedValue: ci.extendedValue,
+      drugName: ci.drugName,
+      batchNumber: ci.batchNumber,
+      indicationCategory: ci.indicationCategory || 'General Health',
+    }));
+
+    const consolidatedTx: Transaction = {
+      id: txId,
+      timestamp: new Date().toISOString(),
+      totalValue: totals.grandTotal,
+      totalDiscount: totals.totalDiscount,
+      visitType: cartItems.some((ci) => ci.visitType === 'Prescription') ? 'Prescription' : 'OTC',
+      prescriptionSighted: cartItems.every((ci) => !ci.prescriptionSighted || ci.prescriptionSighted),
+      discountFlag: cartItems.some((ci) => ci.discountPercent > 5.0),
+      quantityCorrectionFlag: false,
+      syncStatus: isOnline ? 'synced' : 'pending',
+      items: txItems,
+    };
+
+    // Perform atomic local stock decrement first (ensures offline robustness)
+    const localRes = LocalStorageAdapter.atomicLocalDispatch(consolidatedTx);
+    if (!localRes.success) {
+      alert(`Dispatch failed: ${localRes.error}`);
+      return;
+    }
+
+    // Refresh state from authoritative local store
+    const updatedBatches = LocalStorageAdapter.getBatches();
+    const updatedTxs = LocalStorageAdapter.getTransactions();
+    setBatches(updatedBatches);
+    setTransactions(updatedTxs);
+
+    // Online Authoritative Supabase Dispatch reconciliation (if connected)
+    if (isOnline && isSupabaseConfigured && supabase) {
+      const client = supabase;
+      cartItems.forEach((ci) => {
+        const batchObj = batches.find((b) => b.id === ci.selectedBatchId);
+        client
+          .rpc('dispatch_transaction_v2', {
+            p_drug_id: ci.drugId,
+            p_stock_batch_id: ci.selectedBatchId,
+            p_quantity: ci.quantity,
+            p_unit_price: ci.unitPrice,
+            p_discount_percent: ci.discountPercent,
+            p_prescription_sighted: ci.prescriptionSighted,
+            p_visit_type: ci.visitType,
+            p_indication_category: ci.indicationCategory || 'General Health',
+            p_client_stock_version: batchObj?.stockVersion || 1,
+          })
+          .then(({ error }) => {
+            if (error) {
+              console.warn('Online Supabase RPC error (reconciling to offline queue):', error.message);
+            }
+          });
+      });
+    } else if (!isOnline) {
+      // Offline fallback: enqueue into SyncQueue (CON-02, NFR-DEG-01)
+      const queueItem = OfflineSyncService.createQueueItem(
+        'dispatch',
+        consolidatedTx.id,
+        consolidatedTx,
+        1
+      );
+      const newQueue = [queueItem, ...syncQueue];
+      setSyncQueue(newQueue);
+      LocalStorageAdapter.saveSyncQueue(newQueue);
+    }
+
+    // Clear cart and show receipt print modal
+    setCartItems([]);
+    setIsCartOpen(false);
+    setReceiptPrintTx(consolidatedTx);
+    alert(`Basket successfully dispatched! Transaction ${txId} recorded with ${cartItems.length} items.`);
+  };
+
+  // Single Item Dispatch (Backward compatibility & quick direct dispatch)
   const handleDispatchTransaction = (
     drug: DrugMaster,
     batch: StockBatch,
@@ -166,19 +326,16 @@ export const App: React.FC = () => {
       ],
     };
 
-    // Perform atomic local stock decrement first (ensures offline robustness)
     const localRes = LocalStorageAdapter.atomicLocalDispatch(newTx);
     if (!localRes.success) {
       return { success: false, error: localRes.error };
     }
 
-    // Refresh state
     const updatedBatches = LocalStorageAdapter.getBatches();
     const updatedTxs = LocalStorageAdapter.getTransactions();
     setBatches(updatedBatches);
     setTransactions(updatedTxs);
 
-    // Online Authoritative Supabase Dispatch reconciliation (if connected)
     if (isOnline && isSupabaseConfigured && supabase) {
       supabase
         .rpc('dispatch_transaction_v2', {
@@ -195,29 +352,8 @@ export const App: React.FC = () => {
         .then(({ error }) => {
           if (error) {
             console.warn('Online Supabase RPC error (reconciling to offline queue):', error.message);
-            // Enqueue into SyncQueue if server failed
-            const queueItem = OfflineSyncService.createQueueItem(
-              'dispatch',
-              newTx.id,
-              newTx,
-              batch.stockVersion
-            );
-            const newQueue = [queueItem, ...syncQueue];
-            setSyncQueue(newQueue);
-            LocalStorageAdapter.saveSyncQueue(newQueue);
           }
         });
-    } else if (!isOnline) {
-      // Offline fallback: enqueue into SyncQueue (CON-02, NFR-DEG-01)
-      const queueItem = OfflineSyncService.createQueueItem(
-        'dispatch',
-        newTx.id,
-        newTx,
-        batch.stockVersion
-      );
-      const newQueue = [queueItem, ...syncQueue];
-      setSyncQueue(newQueue);
-      LocalStorageAdapter.saveSyncQueue(newQueue);
     }
 
     return { success: true, transaction: newTx };
@@ -228,7 +364,6 @@ export const App: React.FC = () => {
     if (syncQueue.length === 0) return;
 
     const remainingQueue: SyncQueueItem[] = [];
-
     for (const item of syncQueue) {
       const res = OfflineSyncService.reconcileItem(item, 1);
       if (!res.success) {
@@ -261,7 +396,7 @@ export const App: React.FC = () => {
   const handleApplyAdjustment = (
     batchId: string,
     delta: number,
-    reason: StockAdjustmentReason,
+    _reason: StockAdjustmentReason,
     _notes?: string
   ) => {
     const updated = batches.map((b) => {
@@ -278,7 +413,25 @@ export const App: React.FC = () => {
 
     setBatches(updated);
     LocalStorageAdapter.saveBatches(updated);
-    alert(`Stock adjustment of ${delta > 0 ? '+' : ''}${delta} applied with reason code "${reason}".`);
+  };
+
+  // Controlled Stock Discrepancy Reconciliation (Section 10)
+  const handleConfirmDiscrepancy = (
+    batchId: string,
+    delta: number,
+    reasonCode: DiscrepancyReasonCode,
+    notes?: string,
+    record?: StockDiscrepancyRecord
+  ) => {
+    const mappedReason = DiscrepancyService.mapToStockAdjustmentReason(reasonCode);
+    handleApplyAdjustment(batchId, delta, mappedReason, notes);
+
+    if (record) {
+      LocalStorageAdapter.appendDiscrepancy(record);
+      setDiscrepancies((prev) => [record, ...prev]);
+    }
+
+    alert(`Physical count reconciliation complete! Stock adjusted by ${delta > 0 ? '+' : ''}${delta} units.`);
   };
 
   // Create Purchase Order (FR-PROC-03)
@@ -319,7 +472,6 @@ export const App: React.FC = () => {
     onTime: boolean,
     qualityFlag: 'none' | 'damaged' | 'expired_on_arrival' | 'rejected_batch'
   ) => {
-    // 1. Update PO status
     const targetPO = purchaseOrders.find((p) => p.id === poId);
     const updatedPOs = purchaseOrders.map((po) =>
       po.id === poId ? { ...po, status: 'received' as const } : po
@@ -327,7 +479,6 @@ export const App: React.FC = () => {
     setPurchaseOrders(updatedPOs);
     LocalStorageAdapter.savePurchaseOrders(updatedPOs);
 
-    // 2. Increment stock in batch ledger
     let updatedBatches = [...batches];
     for (const item of receivedItems) {
       const existingIdx = updatedBatches.findIndex(
@@ -357,7 +508,6 @@ export const App: React.FC = () => {
     setBatches(updatedBatches);
     LocalStorageAdapter.saveBatches(updatedBatches);
 
-    // 3. Log real Supplier Quality Event (no synthetic/random metrics)
     const orderedQty = targetPO?.items?.[0]?.orderedQuantity || 0;
     const receivedTotal = receivedItems.reduce((acc, it) => acc + it.receivedQuantity, 0);
     const discrepancy = Math.max(0, orderedQty - receivedTotal);
@@ -380,7 +530,7 @@ export const App: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-[#0a0f1d] text-slate-100 flex flex-col font-sans antialiased selection:bg-cyan-500 selection:text-white">
+    <div className="min-h-screen bg-[#0b1728] text-slate-100 flex flex-col font-sans antialiased selection:bg-cyan-500 selection:text-white">
       {/* Login Screen Modal if unauthenticated */}
       {!isAuthenticated && (
         <LoginModal
@@ -391,7 +541,7 @@ export const App: React.FC = () => {
         />
       )}
 
-      {/* Top Application Bar */}
+      {/* Top Application Bar with Cart Counter */}
       <Navbar
         currentTab={currentTab}
         setCurrentTab={setCurrentTab}
@@ -402,16 +552,21 @@ export const App: React.FC = () => {
         setLang={setLang}
         onLockTerminal={() => setIsAuthenticated(false)}
         onOpenWalkthrough={() => setWalkthroughOpen(true)}
+        cartItemCount={cartItems.length}
+        onOpenCart={() => setIsCartOpen(true)}
       />
 
       {/* Main Content View Container */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6">
+      <main className="flex-1 max-w-7xl w-full mx-auto p-3 sm:p-6">
         {currentTab === 'counter' && (
           <CounterPOS
             drugs={drugs}
             batches={batches}
             contraindications={contraindications}
             transactions={transactions}
+            cartItems={cartItems}
+            onAddToCart={handleAddToCart}
+            onOpenCart={() => setIsCartOpen(true)}
             scannedMatch={scannedMatch}
             onClearScannedMatch={() => setScannedMatch(null)}
             onDispatch={handleDispatchTransaction}
@@ -433,6 +588,7 @@ export const App: React.FC = () => {
             suppliers={suppliers}
             supplierEvents={supplierEvents}
             purchaseOrders={purchaseOrders}
+            discrepancies={discrepancies}
             onNavigateTab={(tab) => setCurrentTab(tab)}
             lang={lang}
           />
@@ -442,6 +598,11 @@ export const App: React.FC = () => {
           <InventoryScreen
             drugs={drugs}
             batches={batches}
+            discrepancies={discrepancies}
+            onOpenDiscrepancyModal={(batchId) => {
+              setDiscrepancyBatchId(batchId);
+              setIsDiscrepancyModalOpen(true);
+            }}
             onApplyAdjustment={handleApplyAdjustment}
             lang={lang}
           />
@@ -460,6 +621,29 @@ export const App: React.FC = () => {
           />
         )}
       </main>
+
+      {/* Commercial-Style Cart Drawer (Section 6) */}
+      <CartDrawer
+        isOpen={isCartOpen}
+        onClose={() => setIsCartOpen(false)}
+        cartItems={cartItems}
+        onUpdateQuantity={handleUpdateCartQuantity}
+        onRemoveItem={handleRemoveCartItem}
+        onTogglePrescriptionSighted={handleTogglePrescriptionSighted}
+        onClearCart={handleClearCart}
+        onDispatchCart={handleDispatchCart}
+        lang={lang}
+      />
+
+      {/* Physical Count Discrepancy Reconciliation Modal (Section 10 & 11) */}
+      <StockDiscrepancyModal
+        isOpen={isDiscrepancyModalOpen}
+        onClose={() => setIsDiscrepancyModalOpen(false)}
+        drugs={drugs}
+        batches={batches}
+        preselectedBatchId={discrepancyBatchId}
+        onConfirmAdjustment={handleConfirmDiscrepancy}
+      />
 
       {/* Smart OCR / Barcode Package Scanner Modal */}
       {isScannerOpen && (
