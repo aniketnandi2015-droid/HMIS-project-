@@ -11,6 +11,7 @@ import {
   RefreshCw,
   Globe,
   BookOpen,
+  Sparkles,
 } from 'lucide-react';
 import { translations, Language } from '../lib/i18n/translations';
 import { AnimatedNumber } from './common/AnimatedNumber';
@@ -27,6 +28,7 @@ interface NavbarProps {
   onOpenWalkthrough: () => void;
   cartItemCount?: number;
   onOpenCart?: () => void;
+  onLoadDemoData?: () => void;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -41,6 +43,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenWalkthrough,
   cartItemCount = 0,
   onOpenCart,
+  onLoadDemoData,
 }) => {
   const t = translations[lang];
 
@@ -142,6 +145,18 @@ export const Navbar: React.FC<NavbarProps> = ({
                 </button>
               )}
             </div>
+
+            {/* 48-Hour Sales Pitch Demo Button */}
+            {onLoadDemoData && (
+              <button
+                onClick={onLoadDemoData}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-semibold transition cursor-pointer min-h-[44px] touch-active"
+                title="Load 48h Sales & Operations Demo Data"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                <span className="hidden lg:inline text-[11px]">48h Demo</span>
+              </button>
+            )}
 
             {/* Language Switcher */}
             <button

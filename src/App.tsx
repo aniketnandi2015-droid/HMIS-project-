@@ -45,6 +45,14 @@ import { CartService } from './lib/domain/pos/cartService';
 import { DiscrepancyService } from './lib/domain/inventory/discrepancyService';
 import { isSupabaseConfigured, supabase } from './lib/supabase/client';
 import { Language } from './lib/i18n/translations';
+import {
+  injectSalesPitchDemoData,
+  salesPitchTransactions,
+  salesPitchDiscrepancies,
+  salesPitchUnmetDemands,
+  salesPitchPurchaseOrders,
+  salesPitchSupplierEvents,
+} from './lib/data/salesPitchData';
 
 export const App: React.FC = () => {
   // 1. Single Operator Authentication State (FR-SEC-01) - open by default for immediate operation
@@ -108,16 +116,45 @@ export const App: React.FC = () => {
     const loadedQueue = LocalStorageAdapter.getSyncQueue();
     const loadedDiscrepancies = LocalStorageAdapter.getDiscrepancies();
 
+    let finalDiscrepancies = loadedDiscrepancies;
+    if (finalDiscrepancies.length === 0) {
+      finalDiscrepancies = salesPitchDiscrepancies;
+      LocalStorageAdapter.saveDiscrepancies(salesPitchDiscrepancies);
+    }
+
+    let finalTxs = loadedTxs.length ? loadedTxs : initialRecentTransactions;
+    const txIdSet = new Set(finalTxs.map((t) => t.id));
+    const missingPitchTxs = salesPitchTransactions.filter((t) => !txIdSet.has(t.id));
+    if (missingPitchTxs.length > 0) {
+      finalTxs = [...missingPitchTxs, ...finalTxs];
+      LocalStorageAdapter.saveTransactions(finalTxs);
+    }
+
+    let finalUnmet = loadedUnmet.length ? loadedUnmet : salesPitchUnmetDemands;
+    if (loadedUnmet.length === 0) {
+      LocalStorageAdapter.saveUnmetDemands(salesPitchUnmetDemands);
+    }
+
+    let finalPOs = loadedPOs.length ? loadedPOs : salesPitchPurchaseOrders;
+    if (loadedPOs.length === 0) {
+      LocalStorageAdapter.savePurchaseOrders(salesPitchPurchaseOrders);
+    }
+
+    let finalEvents = loadedSupplierEvents.length ? loadedSupplierEvents : salesPitchSupplierEvents;
+    if (loadedSupplierEvents.length === 0) {
+      LocalStorageAdapter.saveSupplierEvents(salesPitchSupplierEvents);
+    }
+
     setDrugs(loadedDrugs.length ? loadedDrugs : initialDrugs);
     setBatches(loadedBatches.length ? loadedBatches : initialBatches);
     setContraindications(loadedContra.length ? loadedContra : initialContraindications);
     setSuppliers(loadedSuppliers.length ? loadedSuppliers : initialSuppliers);
-    setSupplierEvents(loadedSupplierEvents.length ? loadedSupplierEvents : initialSupplierEvents);
-    setTransactions(loadedTxs.length ? loadedTxs : initialRecentTransactions);
-    setPurchaseOrders(loadedPOs);
-    setUnmetDemands(loadedUnmet);
+    setSupplierEvents(finalEvents);
+    setTransactions(finalTxs);
+    setPurchaseOrders(finalPOs);
+    setUnmetDemands(finalUnmet);
     setSyncQueue(loadedQueue);
-    setDiscrepancies(loadedDiscrepancies);
+    setDiscrepancies(finalDiscrepancies);
 
     // Online / Offline listeners
     const handleOnline = () => setIsOnline(true);
@@ -250,9 +287,9 @@ export const App: React.FC = () => {
             p_indication_category: ci.indicationCategory || 'General Health',
             p_client_stock_version: batchObj?.stockVersion || 1,
           })
-          .then(({ error }) => {
-            if (error) {
-              console.warn('Online Supabase RPC error (reconciling to offline queue):', error.message);
+          .then((res: any) => {
+            if (res?.error) {
+              console.warn('Online Supabase RPC error (reconciling to offline queue):', res.error.message);
             }
           });
       });
@@ -349,9 +386,9 @@ export const App: React.FC = () => {
           p_indication_category: indicationCategory || drug.indicationCategory || 'General Health',
           p_client_stock_version: batch.stockVersion,
         })
-        .then(({ error }) => {
-          if (error) {
-            console.warn('Online Supabase RPC error (reconciling to offline queue):', error.message);
+        .then((res: any) => {
+          if (res?.error) {
+            console.warn('Online Supabase RPC error (reconciling to offline queue):', res.error.message);
           }
         });
     }
@@ -529,6 +566,17 @@ export const App: React.FC = () => {
     alert(`Shipment received! ${receivedTotal} units added to stock ledger. Supplier quality event logged.`);
   };
 
+  // Re-seed & Refresh 48-Hour Sales Pitch Demo Dataset
+  const handleLoadDemoData = () => {
+    injectSalesPitchDemoData();
+    setTransactions(LocalStorageAdapter.getTransactions());
+    setDiscrepancies(LocalStorageAdapter.getDiscrepancies());
+    setUnmetDemands(LocalStorageAdapter.getUnmetDemands());
+    setPurchaseOrders(LocalStorageAdapter.getPurchaseOrders());
+    setSupplierEvents(LocalStorageAdapter.getSupplierEvents());
+    alert('✨ 48-Hour Sales Pitch Demo Dataset loaded! Real-time analytics, stock discrepancy audits, customer unmet demand, and recent multi-item transactions are active.');
+  };
+
   return (
     <div className="min-h-screen bg-[#0b1728] text-slate-100 flex flex-col font-sans antialiased selection:bg-cyan-500 selection:text-white">
       {/* Login Screen Modal if unauthenticated */}
@@ -554,6 +602,7 @@ export const App: React.FC = () => {
         onOpenWalkthrough={() => setWalkthroughOpen(true)}
         cartItemCount={cartItems.length}
         onOpenCart={() => setIsCartOpen(true)}
+        onLoadDemoData={handleLoadDemoData}
       />
 
       {/* Main Content View Container */}
