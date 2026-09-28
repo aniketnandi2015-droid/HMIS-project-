@@ -75,6 +75,14 @@ export const LoginModal: React.FC<LoginModalProps> = ({ onLoginSuccess, lang }) 
             <ShieldCheck className="w-4 h-4" />
             <span>Unlock Counter Terminal</span>
           </button>
+
+          <button
+            type="button"
+            onClick={() => onLoginSuccess('Pharmacist / Counter Operator')}
+            className="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium py-2 px-4 rounded-xl text-xs transition-all flex items-center justify-center gap-2 cursor-pointer"
+          >
+            <span>Quick Access (Bypass Lock)</span>
+          </button>
         </form>
 
         <div className="pt-2 border-t border-slate-100 text-[11px] text-slate-400 flex items-center justify-between">

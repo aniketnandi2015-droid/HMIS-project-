@@ -13,7 +13,12 @@
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
     <script>
-      if ('serviceWorker' in navigator && window.location.protocol.startsWith('http')) {
+      if (
+        'serviceWorker' in navigator &&
+        window.location.protocol.startsWith('http') &&
+        !window.location.hostname.includes('localhost') &&
+        !window.location.hostname.includes('127.0.0.1')
+      ) {
         window.addEventListener('load', () => {
           navigator.serviceWorker.register('/sw.js').catch((err) => {
             console.log('ServiceWorker registration omitted or unsupported in current environment', err);

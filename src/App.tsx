@@ -47,8 +47,8 @@ import { isSupabaseConfigured, supabase } from './lib/supabase/client';
 import { Language } from './lib/i18n/translations';
 
 export const App: React.FC = () => {
-  // 1. Single Operator Authentication State (FR-SEC-01)
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  // 1. Single Operator Authentication State (FR-SEC-01) - open by default for immediate operation
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(true);
 
   // 2. Application Navigation State
   const [currentTab, setCurrentTab] = useState<string>('counter');

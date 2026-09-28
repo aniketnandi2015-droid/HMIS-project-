@@ -89,9 +89,18 @@ export class LocalStorageAdapter {
     }
   }
 
+  private static parseJSON<T>(raw: string | null, fallback: T): T {
+    if (!raw) return fallback;
+    try {
+      return JSON.parse(raw) as T;
+    } catch (e) {
+      console.warn('Failed to parse localStorage item:', e);
+      return fallback;
+    }
+  }
+
   public static getDrugs(): DrugMaster[] {
-    const raw = this.getItem(this.DRUGS_KEY);
-    return raw ? JSON.parse(raw) : [];
+    return this.parseJSON<DrugMaster[]>(this.getItem(this.DRUGS_KEY), []);
   }
 
   public static saveDrugs(drugs: DrugMaster[]): void {
@@ -99,8 +108,7 @@ export class LocalStorageAdapter {
   }
 
   public static getBatches(): StockBatch[] {
-    const raw = this.getItem(this.BATCHES_KEY);
-    return raw ? JSON.parse(raw) : [];
+    return this.parseJSON<StockBatch[]>(this.getItem(this.BATCHES_KEY), []);
   }
 
   public static saveBatches(batches: StockBatch[]): void {
@@ -108,13 +116,11 @@ export class LocalStorageAdapter {
   }
 
   public static getContraindications(): ContraindicationReference[] {
-    const raw = this.getItem(this.CONTRAINDICATIONS_KEY);
-    return raw ? JSON.parse(raw) : [];
+    return this.parseJSON<ContraindicationReference[]>(this.getItem(this.CONTRAINDICATIONS_KEY), []);
   }
 
   public static getTransactions(): Transaction[] {
-    const raw = this.getItem(this.TRANSACTIONS_KEY);
-    return raw ? JSON.parse(raw) : [];
+    return this.parseJSON<Transaction[]>(this.getItem(this.TRANSACTIONS_KEY), []);
   }
 
   public static saveTransactions(txs: Transaction[]): void {
@@ -122,8 +128,7 @@ export class LocalStorageAdapter {
   }
 
   public static getSuppliers(): Supplier[] {
-    const raw = this.getItem(this.SUPPLIERS_KEY);
-    return raw ? JSON.parse(raw) : [];
+    return this.parseJSON<Supplier[]>(this.getItem(this.SUPPLIERS_KEY), []);
   }
 
   public static saveSuppliers(suppliers: Supplier[]): void {
@@ -131,8 +136,7 @@ export class LocalStorageAdapter {
   }
 
   public static getSupplierEvents(): SupplierQualityEvent[] {
-    const raw = this.getItem(this.SUPPLIER_EVENTS_KEY);
-    return raw ? JSON.parse(raw) : [];
+    return this.parseJSON<SupplierQualityEvent[]>(this.getItem(this.SUPPLIER_EVENTS_KEY), []);
   }
 
   public static saveSupplierEvents(events: SupplierQualityEvent[]): void {
@@ -140,8 +144,7 @@ export class LocalStorageAdapter {
   }
 
   public static getCrossSellEvents(): CrossSellEvent[] {
-    const raw = this.getItem(this.CROSS_SELL_EVENTS_KEY);
-    return raw ? JSON.parse(raw) : [];
+    return this.parseJSON<CrossSellEvent[]>(this.getItem(this.CROSS_SELL_EVENTS_KEY), []);
   }
 
   public static saveCrossSellEvents(events: CrossSellEvent[]): void {
@@ -149,8 +152,7 @@ export class LocalStorageAdapter {
   }
 
   public static getPurchaseOrders(): PurchaseOrder[] {
-    const raw = this.getItem(this.PURCHASE_ORDERS_KEY);
-    return raw ? JSON.parse(raw) : [];
+    return this.parseJSON<PurchaseOrder[]>(this.getItem(this.PURCHASE_ORDERS_KEY), []);
   }
 
   public static savePurchaseOrders(pos: PurchaseOrder[]): void {
@@ -158,8 +160,7 @@ export class LocalStorageAdapter {
   }
 
   public static getUnmetDemands(): UnmetDemand[] {
-    const raw = this.getItem(this.UNMET_DEMAND_KEY);
-    return raw ? JSON.parse(raw) : [];
+    return this.parseJSON<UnmetDemand[]>(this.getItem(this.UNMET_DEMAND_KEY), []);
   }
 
   public static saveUnmetDemands(demands: UnmetDemand[]): void {
@@ -167,8 +168,7 @@ export class LocalStorageAdapter {
   }
 
   public static getSyncQueue(): SyncQueueItem[] {
-    const raw = this.getItem(this.SYNC_QUEUE_KEY);
-    return raw ? JSON.parse(raw) : [];
+    return this.parseJSON<SyncQueueItem[]>(this.getItem(this.SYNC_QUEUE_KEY), []);
   }
 
   public static saveSyncQueue(items: SyncQueueItem[]): void {
@@ -176,8 +176,7 @@ export class LocalStorageAdapter {
   }
 
   public static getDiscrepancies(): import('../types/pharmaassist').StockDiscrepancyRecord[] {
-    const raw = this.getItem(this.DISCREPANCIES_KEY);
-    return raw ? JSON.parse(raw) : [];
+    return this.parseJSON<import('../types/pharmaassist').StockDiscrepancyRecord[]>(this.getItem(this.DISCREPANCIES_KEY), []);
   }
 
   public static saveDiscrepancies(records: import('../types/pharmaassist').StockDiscrepancyRecord[]): void {
