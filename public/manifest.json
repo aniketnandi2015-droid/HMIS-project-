@@ -1,0 +1,22 @@
+{
+  "short_name": "PharmaAssist",
+  "name": "PharmaAssist - Retail Pharmacy Operations POS",
+  "description": "Mobile-First AI-Augmented Point of Sale, Inventory and Analytics System",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "type": "image/png",
+      "sizes": "192x192"
+    },
+    {
+      "src": "/icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#0f172a",
+  "theme_color": "#2563eb",
+  "display": "standalone",
+  "orientation": "portrait"
+}
