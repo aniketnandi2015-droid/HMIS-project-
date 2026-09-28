@@ -4,43 +4,44 @@ import {
   UnmetDemand,
   DemandForecast,
   Supplier,
+  PurchaseOrder,
+  ProcurementRecommendation,
 } from '../../types/pharmaassist';
 import { ReorderThresholdService } from '../inventory/reorderThresholdService';
 
-export interface ProcurementRecommendation {
-  drugId: string;
-  drugName: string;
-  genericName: string;
-  currentStock: number;
-  reorderThreshold: number;
-  unmetDemandCount: number;
-  forecastUnits: number;
-  priorityScore: number;
-  preferredSupplier?: Supplier;
-  recommendedOrderQuantity: number;
-}
-
 export class ProcurementService {
   /**
-   * Generates ranked procurement recommendation list (FR-PROC-01):
-   * RecommendationScore = low-stock urgency + unmet-demand signal + forecast signal
+   * Generates ranked procurement recommendations (FR-PROC-01 & Section 10):
+   * Transparent formula:
+   * Net Required = (Threshold + Forecasted Demand + Unmet Demand) - (Current Stock + On-Order Stock)
    */
   public static generateRecommendations(
     drugs: DrugMaster[],
     batches: StockBatch[],
     unmetDemands: UnmetDemand[],
     forecasts: DemandForecast[],
-    suppliers: Supplier[]
+    suppliers: Supplier[],
+    activePurchaseOrders: PurchaseOrder[] = []
   ): ProcurementRecommendation[] {
     const recommendations: ProcurementRecommendation[] = [];
 
-    // Group batches by drug
+    // 1. Group available stock by drug
     const stockMap: Record<string, number> = {};
     for (const b of batches) {
       stockMap[b.drugId] = (stockMap[b.drugId] || 0) + b.quantityOnHand;
     }
 
-    // Unmet demand count per drug
+    // 2. Group on-order quantity from pending POs (drafted, sent, confirmed) to prevent over-ordering
+    const onOrderMap: Record<string, number> = {};
+    for (const po of activePurchaseOrders) {
+      if (po.status === 'sent' || po.status === 'confirmed' || po.status === 'drafted') {
+        for (const item of po.items || []) {
+          onOrderMap[item.drugId] = (onOrderMap[item.drugId] || 0) + item.orderedQuantity;
+        }
+      }
+    }
+
+    // 3. Unmet demand count per drug
     const unmetCountMap: Record<string, number> = {};
     for (const ud of unmetDemands) {
       if (!ud.fulfilled && ud.normalizedDrugId) {
@@ -48,31 +49,50 @@ export class ProcurementService {
       }
     }
 
-    // Forecast units map
-    const forecastMap: Record<string, number> = {};
+    // 4. Forecast map per drug
+    const forecastMap: Record<string, DemandForecast> = {};
     for (const fc of forecasts) {
-      forecastMap[fc.drugId] = (forecastMap[fc.drugId] || 0) + fc.forecastUnits;
+      forecastMap[fc.drugId] = fc;
     }
 
     for (const drug of drugs) {
       if (!drug.active) continue;
 
       const currentStock = stockMap[drug.id] || 0;
-      const threshold = 15; // default
+      const threshold = 15; // default threshold
+      const onOrderQty = onOrderMap[drug.id] || 0;
       const unmetCount = unmetCountMap[drug.id] || 0;
-      const forecastQty = forecastMap[drug.id] || 0;
+      const forecastObj = forecastMap[drug.id];
+      const forecastQty = forecastObj ? forecastObj.forecastUnits : 15;
 
       const isLowStock = ReorderThresholdService.isLowStock(currentStock, threshold);
 
-      // If low stock or unmet demand exists, create recommendation
-      if (isLowStock || unmetCount > 0) {
-        // Priority score formula:
-        // Stock deficit weight (max 50) + Unmet demand weight (10 per occurrence) + Forecast demand
-        const stockDeficit = Math.max(0, threshold - currentStock);
-        const priorityScore = stockDeficit * 3 + unmetCount * 15 + Math.round(forecastQty * 1.5);
+      // Estimate days to stockout
+      const dailyVelocity = forecastQty / 7;
+      const daysToStockout = dailyVelocity > 0 ? Math.max(0, Math.floor(currentStock / dailyVelocity)) : undefined;
 
-        // Find supplier supplying this drug
-        const supplier = suppliers.find((s) =>
+      // Check if replenishment is needed:
+      // Either stock is low, unmet demand exists, or current + on-order will stock out within lead time
+      const netEffectiveStock = currentStock + onOrderQty;
+      const bufferTarget = threshold + forecastQty + unmetCount * 5;
+
+      if (isLowStock || unmetCount > 0 || netEffectiveStock < bufferTarget) {
+        // Net order quantity: covers target deficit minus on-order stock
+        const rawDeficit = bufferTarget - netEffectiveStock;
+        const recommendedOrderQuantity = Math.max(10, Math.ceil(rawDeficit / 10) * 10); // rounded to pack batches of 10
+
+        // Priority score formula:
+        // Stock deficit (x3) + unmet demand (x15) + forecast demand (x1.5) - on-order coverage (x2)
+        const priorityScore = Math.max(
+          5,
+          Math.max(0, threshold - currentStock) * 3 +
+            unmetCount * 15 +
+            Math.round(forecastQty * 1.5) -
+            Math.round(onOrderQty * 0.5)
+        );
+
+        // Find preferred supplier
+        const preferredSupplier = suppliers.find((s) =>
           s.drugsSupplied.some(
             (name) =>
               name.toLowerCase().includes(drug.brandName.toLowerCase()) ||
@@ -80,11 +100,20 @@ export class ProcurementService {
           )
         );
 
-        // Recommended quantity: replenishes to threshold + covers forecast + unmet demand
-        const recommendedOrderQuantity = Math.max(
-          20,
-          stockDeficit + Math.max(unmetCount * 5, Math.round(forecastQty))
-        );
+        // Human-readable explanation of why this was recommended
+        let explanation = `Stock on hand (${currentStock}) is below target buffer (${bufferTarget}).`;
+        if (onOrderQty > 0) {
+          explanation += ` Deducted ${onOrderQty} units already on order.`;
+        }
+        if (unmetCount > 0) {
+          explanation += ` ${unmetCount} unfulfilled customer requests logged.`;
+        }
+        if (forecastObj) {
+          explanation += ` 7-day projected demand: ${forecastQty} units.`;
+        }
+        if (daysToStockout !== undefined) {
+          explanation += ` Projected stockout in ${daysToStockout} day(s).`;
+        }
 
         recommendations.push({
           drugId: drug.id,
@@ -92,11 +121,14 @@ export class ProcurementService {
           genericName: drug.genericName,
           currentStock,
           reorderThreshold: threshold,
+          onOrderQuantity: onOrderQty,
           unmetDemandCount: unmetCount,
           forecastUnits: forecastQty,
           priorityScore,
-          preferredSupplier: supplier,
+          preferredSupplier,
           recommendedOrderQuantity,
+          daysToStockout,
+          explanation,
         });
       }
     }

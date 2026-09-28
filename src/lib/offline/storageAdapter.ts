@@ -7,7 +7,8 @@ import {
   PurchaseOrder,
   UnmetDemand,
   SyncQueueItem,
-  CrossSellSuggestion,
+  SupplierQualityEvent,
+  CrossSellEvent,
 } from '../types/pharmaassist';
 
 export class LocalStorageAdapter {
@@ -19,6 +20,8 @@ export class LocalStorageAdapter {
   private static readonly TRANSACTIONS_KEY = 'pharmaassist_transactions';
   private static readonly SUPPLIERS_KEY = 'pharmaassist_suppliers';
   private static readonly PURCHASE_ORDERS_KEY = 'pharmaassist_purchase_orders';
+  private static readonly SUPPLIER_EVENTS_KEY = 'pharmaassist_supplier_events';
+  private static readonly CROSS_SELL_EVENTS_KEY = 'pharmaassist_cross_sell_events';
   private static readonly UNMET_DEMAND_KEY = 'pharmaassist_unmet_demand';
   private static readonly SYNC_QUEUE_KEY = 'pharmaassist_sync_queue';
 
@@ -57,7 +60,7 @@ export class LocalStorageAdapter {
     defaultBatches: StockBatch[],
     defaultContraindications: ContraindicationReference[],
     defaultSuppliers: Supplier[],
-    _defaultCrossSells?: CrossSellSuggestion[]
+    defaultSupplierEvents?: SupplierQualityEvent[]
   ): void {
     if (!this.getItem(this.DRUGS_KEY)) {
       this.setItem(this.DRUGS_KEY, JSON.stringify(defaultDrugs));
@@ -70,6 +73,9 @@ export class LocalStorageAdapter {
     }
     if (!this.getItem(this.SUPPLIERS_KEY)) {
       this.setItem(this.SUPPLIERS_KEY, JSON.stringify(defaultSuppliers));
+    }
+    if (!this.getItem(this.SUPPLIER_EVENTS_KEY) && defaultSupplierEvents) {
+      this.setItem(this.SUPPLIER_EVENTS_KEY, JSON.stringify(defaultSupplierEvents));
     }
     if (!this.getItem(this.TRANSACTIONS_KEY)) {
       this.setItem(this.TRANSACTIONS_KEY, JSON.stringify([]));
@@ -121,6 +127,24 @@ export class LocalStorageAdapter {
 
   public static saveSuppliers(suppliers: Supplier[]): void {
     this.setItem(this.SUPPLIERS_KEY, JSON.stringify(suppliers));
+  }
+
+  public static getSupplierEvents(): SupplierQualityEvent[] {
+    const raw = this.getItem(this.SUPPLIER_EVENTS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  }
+
+  public static saveSupplierEvents(events: SupplierQualityEvent[]): void {
+    this.setItem(this.SUPPLIER_EVENTS_KEY, JSON.stringify(events));
+  }
+
+  public static getCrossSellEvents(): CrossSellEvent[] {
+    const raw = this.getItem(this.CROSS_SELL_EVENTS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  }
+
+  public static saveCrossSellEvents(events: CrossSellEvent[]): void {
+    this.setItem(this.CROSS_SELL_EVENTS_KEY, JSON.stringify(events));
   }
 
   public static getPurchaseOrders(): PurchaseOrder[] {

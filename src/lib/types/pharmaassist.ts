@@ -1,9 +1,28 @@
 // ==============================================================================
-// PharmaAssist Core Domain Types
-// Strictly adhering to SRS v2.1 & SDD v0.1 Data Dictionary
+// PharmaAssist Core Domain Types (v2.1 + Controlled Extensions)
+// Strictly adhering to SRS v2.1, SDD v0.1 & Controlled Architecture Extensions
 // ==============================================================================
 
 export type ScheduleCategory = 'OTC' | 'Prescription' | 'Schedule H' | 'Schedule X';
+
+export type IndicationCategory =
+  | 'Respiratory & Flu'
+  | 'Cardiovascular & Hypertension'
+  | 'Gastrointestinal & Hydration'
+  | 'Diabetes & Metabolic'
+  | 'Analgesic & Pain Management'
+  | 'Dermatology & Allergy'
+  | 'General Health';
+
+export const INDICATION_CATEGORIES: IndicationCategory[] = [
+  'Respiratory & Flu',
+  'Cardiovascular & Hypertension',
+  'Gastrointestinal & Hydration',
+  'Diabetes & Metabolic',
+  'Analgesic & Pain Management',
+  'Dermatology & Allergy',
+  'General Health',
+];
 
 export interface DrugMaster {
   id: string;
@@ -12,6 +31,7 @@ export interface DrugMaster {
   strength: string;
   dosageForm: string;
   scheduleCategory: ScheduleCategory;
+  indicationCategory?: IndicationCategory;
   listPrice: number;
   dosageDirection?: string;
   commonSideEffects?: string;
@@ -88,6 +108,7 @@ export interface TransactionItem {
   unitPrice: number;
   discount: number;
   extendedValue: number;
+  indicationCategory?: IndicationCategory;
   drugName?: string;
   batchNumber?: string;
 }
@@ -96,6 +117,7 @@ export interface UnmetDemand {
   id: string;
   requestedDrugText: string;
   normalizedDrugId?: string;
+  indicationCategory?: IndicationCategory;
   timestamp: string;
   reason: 'no_match' | 'no_stock' | 'no_substitute';
   fulfilled: boolean;
@@ -150,18 +172,41 @@ export interface CrossSellSuggestion {
   suggestedDrug?: DrugMaster;
   supportCount: number;
   rank: number;
+  conditionalProbability?: number; // P(B|A)
+  recencyWeight?: number;
+  score?: number;
+  explanation?: string;
+}
+
+export interface CrossSellEvent {
+  id: string;
+  sourceDrugId: string;
+  suggestedDrugId: string;
+  accepted: boolean;
+  score: number;
+  visitType: VisitType;
+  indicationCategory?: IndicationCategory;
+  createdAt: string;
 }
 
 export interface DemandForecast {
   id: string;
   drugId: string;
+  drugName?: string;
   horizonDays: number;
   visitType: VisitType;
+  indicationCategory?: IndicationCategory | 'All';
   forecastUnits: number;
+  confidenceLower?: number;
+  confidenceUpper?: number;
+  trendDirection?: 'increasing' | 'stable' | 'decreasing';
   modelVersion: string;
   generatedAt: string;
   eligible: boolean;
   fallbackReason?: string;
+  trainingDataPoints?: number;
+  mapeError?: number;
+  explanation?: string;
 }
 
 export interface StoreConfiguration {
@@ -212,6 +257,34 @@ export interface SubstituteCandidate {
   score: number;
 }
 
+export interface ProcurementRecommendation {
+  drugId: string;
+  drugName: string;
+  genericName: string;
+  currentStock: number;
+  reorderThreshold: number;
+  onOrderQuantity: number;
+  unmetDemandCount: number;
+  forecastUnits: number;
+  priorityScore: number;
+  preferredSupplier?: Supplier;
+  recommendedOrderQuantity: number;
+  daysToStockout?: number;
+  explanation: string;
+}
+
+export interface DrugAlert {
+  type: 'low_stock' | 'near_expiry' | 'stockout_risk' | 'revenue_leakage';
+  severity: 'critical' | 'warning' | 'info';
+  drugId: string;
+  drugName: string;
+  batchNumber?: string;
+  details: string;
+  metric: string;
+  recommendedAction: string;
+  targetTab: 'inventory' | 'procurement' | 'counter';
+}
+
 export interface InsightsData {
   salesTrend: {
     dates: string[];
@@ -223,16 +296,48 @@ export interface InsightsData {
   fastMovingDrugs: { drugName: string; unitsSold: number; velocity: string }[];
   slowMovingDrugs: { drugName: string; unitsSold: number; daysWithoutSale: number; isNearExpiry: boolean }[];
   supplierPerformance: {
+    supplierId: string;
     supplierName: string;
     onTimeRate: number;
     discrepancyCount: number;
     qualityFlags: number;
     overallScore: number;
   }[];
+  drugSpecificAlerts: DrugAlert[];
+  forecastInsights: {
+    topTrending: DemandForecast[];
+    indicationTrend: { category: string; sharePercent: number; trend: string }[];
+  };
   flagsAndAlerts: {
     lowStockCount: number;
     nearExpiryCount: number;
     revenueLeakageCount: number;
     wastageValue: number;
   };
+}
+
+// Smart Scan & OCR Types
+export interface OcrExtractedFields {
+  rawText: string;
+  brandName?: string;
+  genericName?: string;
+  strength?: string;
+  dosageForm?: string;
+  batchNumber?: string;
+  lotNumber?: string;
+  manufacturingDate?: string;
+  expiryDate?: string;
+  barcodeNumber?: string;
+  confidence: number; // 0 to 1
+}
+
+export interface SmartScanMatchResult {
+  matchedDrug?: DrugMaster;
+  matchedBatch?: StockBatch;
+  confidence: number;
+  extractedFields: OcrExtractedFields;
+  requiresConfirmation: boolean;
+  matchScore: number;
+  notes: string;
+  expiryWarning?: string;
 }

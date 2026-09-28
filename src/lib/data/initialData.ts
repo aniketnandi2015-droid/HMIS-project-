@@ -5,6 +5,7 @@ import {
   Supplier,
   CrossSellSuggestion,
   Transaction,
+  SupplierQualityEvent,
 } from '../types/pharmaassist';
 
 export const initialDrugs: DrugMaster[] = [
@@ -15,7 +16,8 @@ export const initialDrugs: DrugMaster[] = [
     strength: '500mg+125mg',
     dosageForm: 'Tablet',
     scheduleCategory: 'Prescription',
-    listPrice: 22.5,
+    indicationCategory: 'Respiratory & Flu',
+    listPrice: 202.5,
     dosageDirection: 'Take 1 tablet twice daily with meals for 5 days',
     commonSideEffects: 'Mild diarrhea, nausea, skin rash',
     identifiers: ['890123456001', 'AUG625'],
@@ -28,7 +30,8 @@ export const initialDrugs: DrugMaster[] = [
     strength: '500mg+125mg',
     dosageForm: 'Tablet',
     scheduleCategory: 'Prescription',
-    listPrice: 18.0,
+    indicationCategory: 'Respiratory & Flu',
+    listPrice: 175.0,
     dosageDirection: 'Take 1 tablet twice daily with meals for 5 days',
     commonSideEffects: 'Mild diarrhea, nausea, headache',
     identifiers: ['890123456002', 'MOX625'],
@@ -41,7 +44,8 @@ export const initialDrugs: DrugMaster[] = [
     strength: '650mg',
     dosageForm: 'Tablet',
     scheduleCategory: 'OTC',
-    listPrice: 2.1,
+    indicationCategory: 'Analgesic & Pain Management',
+    listPrice: 31.0,
     dosageDirection: 'Take 1 tablet every 4 to 6 hours as needed for fever/pain (max 4g/day)',
     commonSideEffects: 'Rare: liver toxicity in overdose',
     identifiers: ['890123456003', 'CAL650'],
@@ -54,7 +58,8 @@ export const initialDrugs: DrugMaster[] = [
     strength: '650mg',
     dosageForm: 'Tablet',
     scheduleCategory: 'OTC',
-    listPrice: 2.15,
+    indicationCategory: 'Analgesic & Pain Management',
+    listPrice: 32.5,
     dosageDirection: 'Take 1 tablet every 4 to 6 hours as needed for fever/pain',
     commonSideEffects: 'Rare: rash, nausea',
     identifiers: ['890123456004', 'DOLO650'],
@@ -67,7 +72,8 @@ export const initialDrugs: DrugMaster[] = [
     strength: '650mg',
     dosageForm: 'Tablet',
     scheduleCategory: 'OTC',
-    listPrice: 2.2,
+    indicationCategory: 'Analgesic & Pain Management',
+    listPrice: 34.0,
     dosageDirection: 'Take 1 tablet every 4 to 6 hours as needed',
     commonSideEffects: 'Rare: mild rash',
     identifiers: ['890123456005', 'CRO650'],
@@ -80,7 +86,8 @@ export const initialDrugs: DrugMaster[] = [
     strength: '20mg',
     dosageForm: 'Tablet',
     scheduleCategory: 'Prescription',
-    listPrice: 14.5,
+    indicationCategory: 'Cardiovascular & Hypertension',
+    listPrice: 185.0,
     dosageDirection: 'Take 1 tablet daily at bedtime',
     commonSideEffects: 'Muscle ache, elevated liver enzymes',
     identifiers: ['890123456006', 'LIP20'],
@@ -93,7 +100,8 @@ export const initialDrugs: DrugMaster[] = [
     strength: '20mg',
     dosageForm: 'Tablet',
     scheduleCategory: 'Prescription',
-    listPrice: 11.2,
+    indicationCategory: 'Cardiovascular & Hypertension',
+    listPrice: 145.0,
     dosageDirection: 'Take 1 tablet daily at bedtime',
     commonSideEffects: 'Muscle ache, fatigue',
     identifiers: ['890123456007', 'ATOR20'],
@@ -106,7 +114,8 @@ export const initialDrugs: DrugMaster[] = [
     strength: '500mg',
     dosageForm: 'Tablet',
     scheduleCategory: 'Prescription',
-    listPrice: 3.8,
+    indicationCategory: 'Diabetes & Metabolic',
+    listPrice: 48.0,
     dosageDirection: 'Take 1 tablet with or after evening meal',
     commonSideEffects: 'Gastrointestinal upset, metallic taste, nausea',
     identifiers: ['890123456008', 'GLY500'],
@@ -119,7 +128,8 @@ export const initialDrugs: DrugMaster[] = [
     strength: '10mg',
     dosageForm: 'Tablet',
     scheduleCategory: 'OTC',
-    listPrice: 4.5,
+    indicationCategory: 'Dermatology & Allergy',
+    listPrice: 22.0,
     dosageDirection: 'Take 1 tablet once daily in the evening',
     commonSideEffects: 'Mild drowsiness, dry mouth',
     identifiers: ['890123456009', 'CET10'],
@@ -132,7 +142,8 @@ export const initialDrugs: DrugMaster[] = [
     strength: '21.8g Sachet',
     dosageForm: 'Powder',
     scheduleCategory: 'OTC',
-    listPrice: 22.0,
+    indicationCategory: 'Gastrointestinal & Hydration',
+    listPrice: 24.5,
     dosageDirection: 'Dissolve contents in 1 liter of clean drinking water',
     commonSideEffects: 'None known when taken as directed',
     identifiers: ['890123456010', 'ORS21'],
@@ -350,6 +361,45 @@ export const initialSuppliers: Supplier[] = [
   },
 ];
 
+export const initialSupplierEvents: SupplierQualityEvent[] = [
+  {
+    id: 'sqe-1',
+    purchaseOrderId: 'po-historical-1',
+    supplierId: '11111111-1111-1111-1111-111111111111',
+    onTime: true,
+    quantityDiscrepancy: 0,
+    qualityFlag: 'none',
+    evaluatedAt: '2026-09-15T10:00:00Z',
+  },
+  {
+    id: 'sqe-2',
+    purchaseOrderId: 'po-historical-2',
+    supplierId: '22222222-2222-2222-2222-222222222222',
+    onTime: true,
+    quantityDiscrepancy: 0,
+    qualityFlag: 'none',
+    evaluatedAt: '2026-09-18T12:00:00Z',
+  },
+  {
+    id: 'sqe-3',
+    purchaseOrderId: 'po-historical-3',
+    supplierId: '22222222-2222-2222-2222-222222222222',
+    onTime: false,
+    quantityDiscrepancy: 5,
+    qualityFlag: 'damaged',
+    evaluatedAt: '2026-09-22T14:30:00Z',
+  },
+  {
+    id: 'sqe-4',
+    purchaseOrderId: 'po-historical-4',
+    supplierId: '33333333-3333-3333-3333-333333333333',
+    onTime: true,
+    quantityDiscrepancy: 0,
+    qualityFlag: 'none',
+    evaluatedAt: '2026-09-25T11:00:00Z',
+  },
+];
+
 export const initialCrossSells: CrossSellSuggestion[] = [
   {
     id: 'cs-01',
@@ -357,6 +407,9 @@ export const initialCrossSells: CrossSellSuggestion[] = [
     suggestedDrugId: 'a0000000-0000-0000-0000-000000000010',
     supportCount: 42,
     rank: 1,
+    conditionalProbability: 0.65,
+    score: 84.5,
+    explanation: 'Frequently bought with Augmentin for hydration and oral care (P=65%).',
   },
   {
     id: 'cs-02',
@@ -364,83 +417,81 @@ export const initialCrossSells: CrossSellSuggestion[] = [
     suggestedDrugId: 'a0000000-0000-0000-0000-000000000009',
     supportCount: 51,
     rank: 1,
+    conditionalProbability: 0.72,
+    score: 92.0,
+    explanation: 'Frequently paired in flu/cold treatment with Cetcip (P=72%).',
   },
 ];
 
-export const initialRecentTransactions: Transaction[] = [
-  {
-    id: 'TX-2026-9001',
-    timestamp: '2026-09-28T09:15:00.000Z',
-    totalValue: 45.0,
-    totalDiscount: 0.0,
-    visitType: 'OTC',
-    prescriptionSighted: false,
-    discountFlag: false,
-    quantityCorrectionFlag: false,
-    syncStatus: 'synced',
-    items: [
-      {
-        id: 'txi-1',
-        transactionId: 'TX-2026-9001',
-        drugId: 'a0000000-0000-0000-0000-000000000004',
-        stockBatchId: 'b0000000-0000-0000-0000-000000000004',
-        quantity: 20,
-        unitPrice: 2.15,
-        discount: 0.0,
-        extendedValue: 43.0,
-        drugName: 'Dolo 650',
-        batchNumber: 'DOLO-B2026-02',
-      },
-    ],
-  },
-  {
-    id: 'TX-2026-9002',
-    timestamp: '2026-09-28T10:45:00.000Z',
-    totalValue: 202.5,
-    totalDiscount: 22.5,
-    visitType: 'Prescription',
-    prescriptionSighted: true,
-    discountFlag: true, // 10% discount > 5% reference ceiling -> flagged!
-    quantityCorrectionFlag: false,
-    syncStatus: 'synced',
-    items: [
-      {
-        id: 'txi-2',
-        transactionId: 'TX-2026-9002',
-        drugId: 'a0000000-0000-0000-0000-000000000001',
-        stockBatchId: 'b0000000-0000-0000-0000-000000000001',
-        quantity: 10,
-        unitPrice: 22.5,
-        discount: 22.5,
-        extendedValue: 202.5,
-        drugName: 'Augmentin 625 Duo',
-        batchNumber: 'AUG-B2026-01',
-      },
-    ],
-  },
-  {
-    id: 'TX-2026-9003',
-    timestamp: '2026-09-27T16:20:00.000Z',
-    totalValue: 44.0,
-    totalDiscount: 0.0,
-    visitType: 'OTC',
-    prescriptionSighted: false,
-    discountFlag: false,
-    quantityCorrectionFlag: false,
-    syncStatus: 'synced',
-    items: [
-      {
-        id: 'txi-3',
-        transactionId: 'TX-2026-9003',
-        drugId: 'a0000000-0000-0000-0000-000000000010',
-        stockBatchId: 'b0000000-0000-0000-0000-000000000010',
-        quantity: 2,
-        unitPrice: 22.0,
-        discount: 0.0,
-        extendedValue: 44.0,
-        drugName: 'Electral ORS 21.8g',
-        batchNumber: 'ORS-B2026-02',
-      },
-    ],
-  },
-];
+// Helper to generate realistic trailing daily sales
+const generateHistory = (): Transaction[] => {
+  const list: Transaction[] = [];
+  const baseTime = new Date('2026-09-28T18:00:00Z').getTime();
+  const dayMs = 24 * 60 * 60 * 1000;
+
+  for (let i = 0; i < 35; i++) {
+    const txDate = new Date(baseTime - i * dayMs).toISOString();
+
+    // Dolo 650 sale
+    list.push({
+      id: `TX-HIST-${1000 + i}`,
+      timestamp: txDate,
+      totalValue: 325.0,
+      totalDiscount: 0,
+      visitType: i % 3 === 0 ? 'Prescription' : 'OTC',
+      prescriptionSighted: i % 3 === 0,
+      discountFlag: false,
+      quantityCorrectionFlag: false,
+      syncStatus: 'synced',
+      items: [
+        {
+          id: `txi-${1000 + i}`,
+          transactionId: `TX-HIST-${1000 + i}`,
+          drugId: 'a0000000-0000-0000-0000-000000000004',
+          stockBatchId: 'b0000000-0000-0000-0000-000000000004',
+          quantity: 10,
+          unitPrice: 32.5,
+          discount: 0,
+          extendedValue: 325.0,
+          indicationCategory: 'Analgesic & Pain Management',
+          drugName: 'Dolo 650',
+          batchNumber: 'DOLO-B2026-02',
+        },
+      ],
+    });
+
+    // Augmentin 625 Duo sale every 2 days
+    if (i % 2 === 0) {
+      list.push({
+        id: `TX-HIST-AUG-${2000 + i}`,
+        timestamp: txDate,
+        totalValue: 405.0,
+        totalDiscount: 0,
+        visitType: 'Prescription',
+        prescriptionSighted: true,
+        discountFlag: false,
+        quantityCorrectionFlag: false,
+        syncStatus: 'synced',
+        items: [
+          {
+            id: `txi-aug-${2000 + i}`,
+            transactionId: `TX-HIST-AUG-${2000 + i}`,
+            drugId: 'a0000000-0000-0000-0000-000000000001',
+            stockBatchId: 'b0000000-0000-0000-0000-000000000001',
+            quantity: 2,
+            unitPrice: 202.5,
+            discount: 0,
+            extendedValue: 405.0,
+            indicationCategory: 'Respiratory & Flu',
+            drugName: 'Augmentin 625 Duo',
+            batchNumber: 'AUG-B2026-01',
+          },
+        ],
+      });
+    }
+  }
+
+  return list;
+};
+
+export const initialRecentTransactions: Transaction[] = generateHistory();

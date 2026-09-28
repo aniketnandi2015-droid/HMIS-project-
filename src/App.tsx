@@ -16,10 +16,13 @@ import {
   ContraindicationReference,
   Transaction,
   Supplier,
+  SupplierQualityEvent,
   PurchaseOrder,
   UnmetDemand,
   SyncQueueItem,
   StockAdjustmentReason,
+  SmartScanMatchResult,
+  IndicationCategory,
 } from './lib/types/pharmaassist';
 
 import {
@@ -27,12 +30,13 @@ import {
   initialBatches,
   initialContraindications,
   initialSuppliers,
-  initialCrossSells,
+  initialSupplierEvents,
   initialRecentTransactions,
 } from './lib/data/initialData';
 
 import { LocalStorageAdapter } from './lib/offline/storageAdapter';
 import { OfflineSyncService } from './lib/domain/synchronization/offlineSyncService';
+import { isSupabaseConfigured, supabase } from './lib/supabase/client';
 import { Language } from './lib/i18n/translations';
 
 export const App: React.FC = () => {
@@ -53,13 +57,15 @@ export const App: React.FC = () => {
   const [batches, setBatches] = useState<StockBatch[]>([]);
   const [contraindications, setContraindications] = useState<ContraindicationReference[]>([]);
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [supplierEvents, setSupplierEvents] = useState<SupplierQualityEvent[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [unmetDemands, setUnmetDemands] = useState<UnmetDemand[]>([]);
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrder[]>([]);
   const [syncQueue, setSyncQueue] = useState<SyncQueueItem[]>([]);
 
-  // 5. Modal States
+  // 5. Modal States & Active Scans
   const [isScannerOpen, setIsScannerOpen] = useState(false);
+  const [scannedMatch, setScannedMatch] = useState<SmartScanMatchResult | null>(null);
   const [receiptPrintTx, setReceiptPrintTx] = useState<Transaction | null>(null);
   const [walkthroughOpen, setWalkthroughOpen] = useState(false);
   const [safetyConflictModal, setSafetyConflictModal] = useState<{
@@ -74,21 +80,27 @@ export const App: React.FC = () => {
       initialBatches,
       initialContraindications,
       initialSuppliers,
-      initialCrossSells
+      initialSupplierEvents
     );
 
     const loadedDrugs = LocalStorageAdapter.getDrugs();
     const loadedBatches = LocalStorageAdapter.getBatches();
     const loadedContra = LocalStorageAdapter.getContraindications();
     const loadedSuppliers = LocalStorageAdapter.getSuppliers();
+    const loadedSupplierEvents = LocalStorageAdapter.getSupplierEvents();
     const loadedTxs = LocalStorageAdapter.getTransactions();
+    const loadedPOs = LocalStorageAdapter.getPurchaseOrders();
+    const loadedUnmet = LocalStorageAdapter.getUnmetDemands();
     const loadedQueue = LocalStorageAdapter.getSyncQueue();
 
     setDrugs(loadedDrugs.length ? loadedDrugs : initialDrugs);
     setBatches(loadedBatches.length ? loadedBatches : initialBatches);
     setContraindications(loadedContra.length ? loadedContra : initialContraindications);
     setSuppliers(loadedSuppliers.length ? loadedSuppliers : initialSuppliers);
+    setSupplierEvents(loadedSupplierEvents.length ? loadedSupplierEvents : initialSupplierEvents);
     setTransactions(loadedTxs.length ? loadedTxs : initialRecentTransactions);
+    setPurchaseOrders(loadedPOs);
+    setUnmetDemands(loadedUnmet);
     setSyncQueue(loadedQueue);
 
     // Online / Offline listeners
@@ -104,7 +116,7 @@ export const App: React.FC = () => {
     };
   }, []);
 
-  // Atomic Dispatch Execution (FR-POS-06, FR-INV-01)
+  // Atomic Dispatch Execution (FR-POS-06, FR-INV-01) with Supabase RPC Online & Offline Fallback
   const handleDispatchTransaction = (
     drug: DrugMaster,
     batch: StockBatch,
@@ -112,7 +124,8 @@ export const App: React.FC = () => {
     unitPrice: number,
     discountPercent: number,
     prescriptionSighted: boolean,
-    visitType: 'OTC' | 'Prescription'
+    visitType: 'OTC' | 'Prescription',
+    indicationCategory?: IndicationCategory
   ): { success: boolean; transaction?: Transaction; error?: string } => {
     if (batch.quantityOnHand < quantity) {
       return {
@@ -148,11 +161,12 @@ export const App: React.FC = () => {
           extendedValue,
           drugName: drug.brandName,
           batchNumber: batch.batchNumber,
+          indicationCategory: indicationCategory || drug.indicationCategory || 'General Health',
         },
       ],
     };
 
-    // Perform atomic local stock decrement
+    // Perform atomic local stock decrement first (ensures offline robustness)
     const localRes = LocalStorageAdapter.atomicLocalDispatch(newTx);
     if (!localRes.success) {
       return { success: false, error: localRes.error };
@@ -164,8 +178,37 @@ export const App: React.FC = () => {
     setBatches(updatedBatches);
     setTransactions(updatedTxs);
 
-    // If offline, enqueue into SyncQueue (CON-02, NFR-DEG-01)
-    if (!isOnline) {
+    // Online Authoritative Supabase Dispatch reconciliation (if connected)
+    if (isOnline && isSupabaseConfigured && supabase) {
+      supabase
+        .rpc('dispatch_transaction_v2', {
+          p_drug_id: drug.id,
+          p_stock_batch_id: batch.id,
+          p_quantity: quantity,
+          p_unit_price: unitPrice,
+          p_discount_percent: discountPercent,
+          p_prescription_sighted: prescriptionSighted,
+          p_visit_type: visitType,
+          p_indication_category: indicationCategory || drug.indicationCategory || 'General Health',
+          p_client_stock_version: batch.stockVersion,
+        })
+        .then(({ error }) => {
+          if (error) {
+            console.warn('Online Supabase RPC error (reconciling to offline queue):', error.message);
+            // Enqueue into SyncQueue if server failed
+            const queueItem = OfflineSyncService.createQueueItem(
+              'dispatch',
+              newTx.id,
+              newTx,
+              batch.stockVersion
+            );
+            const newQueue = [queueItem, ...syncQueue];
+            setSyncQueue(newQueue);
+            LocalStorageAdapter.saveSyncQueue(newQueue);
+          }
+        });
+    } else if (!isOnline) {
+      // Offline fallback: enqueue into SyncQueue (CON-02, NFR-DEG-01)
       const queueItem = OfflineSyncService.createQueueItem(
         'dispatch',
         newTx.id,
@@ -199,7 +242,7 @@ export const App: React.FC = () => {
   };
 
   // Log Unmet Customer Demand (FR-POS-07)
-  const handleLogUnmetDemand = (drugText: string, drugId?: string) => {
+  const handleLogUnmetDemand = (drugText: string, drugId?: string, indication?: IndicationCategory) => {
     const demand: UnmetDemand = {
       id: `dem-${Date.now()}`,
       requestedDrugText: drugText,
@@ -211,7 +254,7 @@ export const App: React.FC = () => {
     const updated = [demand, ...unmetDemands];
     setUnmetDemands(updated);
     LocalStorageAdapter.saveUnmetDemands(updated);
-    alert(`Customer demand logged for "${drugText}". Added to procurement recommendation engine.`);
+    alert(`Customer demand logged for "${drugText}" (${indication || 'General'}). Logged to procurement.`);
   };
 
   // Apply Reason-Coded Stock Adjustment (FR-INV-04)
@@ -262,7 +305,7 @@ export const App: React.FC = () => {
     alert(`Purchase order ${newPO.id} generated and dispatched to ${supplier?.name}.`);
   };
 
-  // Receive Purchase Order Shipment (FR-PROC-03, FR-PROC-04)
+  // Receive Purchase Order Shipment with Supplier Quality Logging (FR-PROC-03, FR-PROC-04)
   const handleReceivePO = (
     poId: string,
     receivedItems: {
@@ -273,10 +316,11 @@ export const App: React.FC = () => {
       expiryDate: string;
       receivedQuantity: number;
     }[],
-    _onTime: boolean,
-    _qualityFlag: 'none' | 'damaged' | 'expired_on_arrival' | 'rejected_batch'
+    onTime: boolean,
+    qualityFlag: 'none' | 'damaged' | 'expired_on_arrival' | 'rejected_batch'
   ) => {
     // 1. Update PO status
+    const targetPO = purchaseOrders.find((p) => p.id === poId);
     const updatedPOs = purchaseOrders.map((po) =>
       po.id === poId ? { ...po, status: 'received' as const } : po
     );
@@ -312,11 +356,31 @@ export const App: React.FC = () => {
 
     setBatches(updatedBatches);
     LocalStorageAdapter.saveBatches(updatedBatches);
-    alert(`Shipment received! ${receivedItems.reduce((acc, it) => acc + it.receivedQuantity, 0)} units added to stock ledger.`);
+
+    // 3. Log real Supplier Quality Event (no synthetic/random metrics)
+    const orderedQty = targetPO?.items?.[0]?.orderedQuantity || 0;
+    const receivedTotal = receivedItems.reduce((acc, it) => acc + it.receivedQuantity, 0);
+    const discrepancy = Math.max(0, orderedQty - receivedTotal);
+
+    const qualityEvent: SupplierQualityEvent = {
+      id: `sqe-${Date.now()}`,
+      purchaseOrderId: poId,
+      supplierId: targetPO?.supplierId || '',
+      onTime,
+      quantityDiscrepancy: discrepancy,
+      qualityFlag,
+      evaluatedAt: new Date().toISOString(),
+    };
+
+    const updatedEvents = [qualityEvent, ...supplierEvents];
+    setSupplierEvents(updatedEvents);
+    LocalStorageAdapter.saveSupplierEvents(updatedEvents);
+
+    alert(`Shipment received! ${receivedTotal} units added to stock ledger. Supplier quality event logged.`);
   };
 
   return (
-    <div className="min-h-screen bg-slate-100 text-slate-900 flex flex-col font-sans antialiased">
+    <div className="min-h-screen bg-[#0a0f1d] text-slate-100 flex flex-col font-sans antialiased selection:bg-cyan-500 selection:text-white">
       {/* Login Screen Modal if unauthenticated */}
       {!isAuthenticated && (
         <LoginModal
@@ -348,6 +412,8 @@ export const App: React.FC = () => {
             batches={batches}
             contraindications={contraindications}
             transactions={transactions}
+            scannedMatch={scannedMatch}
+            onClearScannedMatch={() => setScannedMatch(null)}
             onDispatch={handleDispatchTransaction}
             onLogUnmetDemand={handleLogUnmetDemand}
             onOpenScanner={() => setIsScannerOpen(true)}
@@ -365,6 +431,9 @@ export const App: React.FC = () => {
             batches={batches}
             transactions={transactions}
             suppliers={suppliers}
+            supplierEvents={supplierEvents}
+            purchaseOrders={purchaseOrders}
+            onNavigateTab={(tab) => setCurrentTab(tab)}
             lang={lang}
           />
         )}
@@ -392,24 +461,21 @@ export const App: React.FC = () => {
         )}
       </main>
 
-      {/* Modals & Dialogs */}
+      {/* Smart OCR / Barcode Package Scanner Modal */}
       {isScannerOpen && (
         <BarcodeScannerModal
+          drugs={drugs}
+          batches={batches}
           onClose={() => setIsScannerOpen(false)}
-          onScanResult={(code) => {
+          onScanResult={(match) => {
             setIsScannerOpen(false);
-            const foundDrug = drugs.find((d) =>
-              d.identifiers.some((id) => id.toLowerCase() === code.toLowerCase())
-            );
-            if (foundDrug) {
-              setCurrentTab('counter');
-            } else {
-              alert(`Barcode / QR "${code}" scanned. (No exact drug in catalog; please search manually)`);
-            }
+            setScannedMatch(match);
+            setCurrentTab('counter');
           }}
         />
       )}
 
+      {/* Clinical Contraindication Alert Modal */}
       {safetyConflictModal && (
         <ContraindicationAlertModal
           drug={safetyConflictModal.drug}
@@ -422,6 +488,7 @@ export const App: React.FC = () => {
         />
       )}
 
+      {/* POS Receipt Modal */}
       {receiptPrintTx && (
         <ReceiptPrintModal
           transaction={receiptPrintTx}
@@ -429,6 +496,7 @@ export const App: React.FC = () => {
         />
       )}
 
+      {/* Operator Walkthrough Modal */}
       {walkthroughOpen && (
         <WalkthroughModal onClose={() => setWalkthroughOpen(false)} />
       )}
