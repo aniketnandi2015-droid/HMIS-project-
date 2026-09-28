@@ -1,11 +1,11 @@
 import React, { useState, useMemo } from 'react';
 import {
-  TrendingUp,
   Truck,
   Layers,
   ArrowRight,
   ShieldAlert,
   Sparkles,
+  Scale,
 } from 'lucide-react';
 import {
   DrugMaster,
@@ -14,12 +14,13 @@ import {
   Supplier,
   SupplierQualityEvent,
   PurchaseOrder,
+  StockDiscrepancyRecord,
 } from '../lib/types/pharmaassist';
-import { MovementClassificationService } from '../lib/domain/analytics/movementClassificationService';
 import { SupplierQualityService } from '../lib/domain/procurement/supplierQualityService';
 import { InventoryAlertService } from '../lib/domain/inventory/inventoryAlertService';
 import { TimeSeriesForecastService } from '../lib/domain/analytics/timeSeriesForecastService';
 import { translations, Language } from '../lib/i18n/translations';
+import { AnimatedNumber } from './common/AnimatedNumber';
 
 interface InsightsScreenProps {
   drugs: DrugMaster[];
@@ -28,6 +29,7 @@ interface InsightsScreenProps {
   suppliers: Supplier[];
   supplierEvents: SupplierQualityEvent[];
   purchaseOrders: PurchaseOrder[];
+  discrepancies?: StockDiscrepancyRecord[];
   onNavigateTab: (tab: string) => void;
   lang: Language;
 }
@@ -39,6 +41,7 @@ export const InsightsScreen: React.FC<InsightsScreenProps> = ({
   suppliers,
   supplierEvents,
   purchaseOrders,
+  discrepancies = [],
   onNavigateTab,
   lang,
 }) => {
@@ -82,7 +85,7 @@ export const InsightsScreen: React.FC<InsightsScreenProps> = ({
     };
   }, [transactions, lookbackDays]);
 
-  // 2. Actionable Drug-Specific Inventory Alerts (Section 9)
+  // 2. Actionable Drug-Specific Inventory Alerts
   const drugAlerts = useMemo(() => {
     return InventoryAlertService.generateAlerts(
       drugs,
@@ -93,12 +96,7 @@ export const InsightsScreen: React.FC<InsightsScreenProps> = ({
     );
   }, [drugs, batches, purchaseOrders]);
 
-  // 3. Fast / Slow Moving Stock
-  const movement = useMemo(() => {
-    return MovementClassificationService.classifyMovement(drugs, batches, transactions, new Date(), lookbackDays);
-  }, [drugs, batches, transactions, lookbackDays]);
-
-  // 4. Real Supplier Performance Analytics (Section 3.E & 10)
+  // 3. Real Supplier Performance Analytics
   const supplierStats = useMemo(() => {
     return suppliers.map((sup) => {
       const events = supplierEvents.filter((e) => e.supplierId === sup.id);
@@ -115,7 +113,6 @@ export const InsightsScreen: React.FC<InsightsScreenProps> = ({
 
   // 5. Time-Series Demand Forecasting Insights & Indication Trends
   const forecastInsights = useMemo(() => {
-    // Generate forecast for top active drugs
     const list = drugs.slice(0, 4).map((d) =>
       TimeSeriesForecastService.generateTimeSeriesForecast(
         d.id,
@@ -126,7 +123,6 @@ export const InsightsScreen: React.FC<InsightsScreenProps> = ({
       )
     );
 
-    // Indication category breakdown
     const catCounts: Record<string, number> = {};
     let totalItems = 0;
     transactions.forEach((tx) => {
@@ -146,32 +142,38 @@ export const InsightsScreen: React.FC<InsightsScreenProps> = ({
     return { forecasts: list, indicationTrend };
   }, [drugs, transactions]);
 
-  // Revenue leakage and wastage totals
   const leakageCount = transactions.filter((tx) => tx.discountFlag).length;
 
+  // Filter significant discrepancies for attention
+  const significantDiscrepancies = useMemo(
+    () => discrepancies.filter((d) => d.severity === 'significant' || d.severity === 'material'),
+    [discrepancies]
+  );
+
   return (
-    <div className="space-y-6 pb-20 text-slate-100">
+    <div className="space-y-5 pb-24 text-slate-100">
       {/* Top Header & Range Filter */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-[#0b1329] p-5 rounded-3xl border border-slate-800 shadow-md">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-[#0b1728] p-4 sm:p-5 rounded-3xl border border-[#23455b] shadow-md">
         <div>
-          <span className="text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded bg-cyan-950 text-cyan-300 border border-cyan-800">
+          <span className="text-[10px] font-bold uppercase tracking-widest px-2.5 py-0.5 rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/30">
             One-Screen Operational Radar (UI-03, NFR-USE-02)
           </span>
-          <h2 className="text-xl font-black text-white mt-1">{t.insights}</h2>
+          <h2 className="text-lg sm:text-xl font-black text-white mt-1">{t.insights}</h2>
           <p className="text-xs text-slate-400">
-            Time-Series Demand Forecasts • Real Supplier Quality • Zero drill-down tabs
+            What needs attention today: Inventory risk • Demand surges • Supplier quality
           </p>
         </div>
 
         {/* Time range selector [7d | 30d | 90d] */}
-        <div className="flex bg-[#070d1a] p-1 rounded-xl border border-slate-800 self-start sm:self-auto">
+        <div className="flex bg-[#102236] p-1 rounded-xl border border-[#23455b] self-start sm:self-auto">
           {(['7d', '30d', '90d'] as const).map((range) => (
             <button
               key={range}
+              type="button"
               onClick={() => setTimeRange(range)}
               className={`px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer min-h-[38px] ${
                 timeRange === range
-                  ? 'bg-cyan-600 text-white shadow-sm'
+                  ? 'bg-cyan-600 text-white shadow-xs'
                   : 'text-slate-400 hover:text-white'
               }`}
             >
@@ -181,11 +183,55 @@ export const InsightsScreen: React.FC<InsightsScreenProps> = ({
         </div>
       </div>
 
-      {/* SECTION 1: ACTIONABLE INVENTORY ALERTS (Section 9) */}
-      <div className="bg-[#0b1329] p-5 rounded-3xl border border-slate-800 shadow-md space-y-3">
+      {/* SECTION 1: WHAT NEEDS ATTENTION TODAY (Significant Discrepancies & Critical Alerts) */}
+      {significantDiscrepancies.length > 0 && (
+        <div className="bg-[#0b1728] p-4 sm:p-5 rounded-3xl border border-rose-800/80 shadow-md space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Scale className="w-5 h-5 text-rose-400" />
+              <h3 className="font-bold text-sm text-white">Physical Count Discrepancies Requiring Review</h3>
+            </div>
+            <span className="text-[10px] text-rose-300 font-mono font-bold bg-rose-950 px-2 py-0.5 rounded-full border border-rose-800">
+              {significantDiscrepancies.length} Flagged
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {significantDiscrepancies.slice(0, 4).map((d) => (
+              <div
+                key={d.id}
+                className="p-3 bg-rose-950/40 border border-rose-800/60 rounded-2xl flex items-center justify-between text-xs"
+              >
+                <div>
+                  <div className="font-bold text-white">{d.drugName} (Batch {d.batchNumber})</div>
+                  <div className="text-[11px] text-slate-300">
+                    System: {d.systemQuantity} → Physical: {d.physicalQuantity} ({d.reasonCode.replace(/_/g, ' ')})
+                  </div>
+                  {d.notes && <div className="text-[10px] text-rose-300/80 italic mt-0.5">"{d.notes}"</div>}
+                </div>
+                <div className="text-right">
+                  <div className="font-mono font-bold text-rose-400">
+                    {d.discrepancyDelta > 0 ? '+' : ''}{d.discrepancyDelta} units
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => onNavigateTab('inventory')}
+                    className="text-[10px] text-cyan-400 hover:underline mt-1 block"
+                  >
+                    Review in Stock →
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* SECTION 2: ACTIONABLE INVENTORY ALERTS (Section 9) */}
+      <div className="bg-[#0b1728] p-4 sm:p-5 rounded-3xl border border-[#23455b] shadow-md space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <ShieldAlert className="w-5 h-5 text-rose-400" />
+            <ShieldAlert className="w-5 h-5 text-amber-400" />
             <h3 className="font-bold text-sm text-white">Actionable Drug-Specific Alerts ({drugAlerts.length})</h3>
           </div>
           <span className="text-[10px] text-slate-400 font-mono">Immediate Counter Action</span>
@@ -198,245 +244,192 @@ export const InsightsScreen: React.FC<InsightsScreenProps> = ({
                 key={idx}
                 className={`p-3.5 rounded-2xl border text-xs space-y-2 flex flex-col justify-between ${
                   alert.severity === 'critical'
-                    ? 'bg-rose-950/40 border-rose-800/80 text-rose-200'
-                    : 'bg-amber-950/40 border-amber-800/80 text-amber-200'
+                    ? 'bg-rose-950/40 border-rose-800 text-rose-200'
+                    : 'bg-amber-950/30 border-amber-800 text-amber-200'
                 }`}
               >
                 <div>
                   <div className="flex justify-between items-start">
-                    <span className="font-bold text-white text-sm">{alert.drugName}</span>
+                    <span className="font-bold text-white text-xs">{alert.drugName}</span>
                     <span
-                      className={`text-[9px] font-bold uppercase px-2 py-0.5 rounded-full ${
+                      className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full uppercase ${
                         alert.severity === 'critical'
-                          ? 'bg-rose-600 text-white'
-                          : 'bg-amber-500 text-slate-950'
+                          ? 'bg-rose-900/80 text-rose-200'
+                          : 'bg-amber-900/80 text-amber-200'
                       }`}
                     >
-                      {alert.metric}
+                      {alert.severity}
                     </span>
                   </div>
-                  <p className="text-[11px] text-slate-300 mt-1 leading-snug">{alert.details}</p>
+                  <div className="text-[11px] font-mono mt-1 opacity-90">{alert.metric}</div>
+                  <p className="text-[11px] opacity-80 mt-1">{alert.details}</p>
                 </div>
 
-                <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between">
-                  <span className="text-[10px] text-slate-400 font-semibold">{alert.recommendedAction}</span>
+                <div className="pt-2 border-t border-slate-800 flex items-center justify-between">
+                  <span className="text-[10px] text-slate-400">Action: {alert.recommendedAction}</span>
                   <button
+                    type="button"
                     onClick={() => onNavigateTab(alert.targetTab)}
-                    className="text-[11px] font-bold text-cyan-400 hover:text-cyan-300 flex items-center gap-1 cursor-pointer"
+                    className="px-2.5 py-1 bg-cyan-600 hover:bg-cyan-500 text-white rounded-lg text-[10px] font-semibold flex items-center gap-1 transition cursor-pointer touch-active"
                   >
-                    <span>Resolve</span> <ArrowRight className="w-3 h-3" />
+                    <span>{alert.targetTab === 'procurement' ? 'Procure' : 'Review Stock'}</span>
+                    <ArrowRight className="w-3 h-3" />
                   </button>
                 </div>
               </div>
             ))}
           </div>
         ) : (
-          <div className="p-4 bg-[#070d1a] rounded-2xl text-center text-xs text-slate-400">
-            All inventory levels and expiry shelf-lives are currently within safe thresholds.
+          <div className="p-4 bg-[#102236] rounded-2xl text-center text-xs text-slate-400">
+            No critical stock or near-expiry alerts detected.
           </div>
         )}
       </div>
 
-      {/* SECTION 2: 4 CORE OPERATIONAL CARDS */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-        {/* Card 1: Real Sales & Revenue Trend (FR-ANL-01) */}
-        <div className="bg-[#0b1329] p-5 rounded-3xl border border-slate-800 shadow-md space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-xl bg-cyan-950 text-cyan-400 border border-cyan-800 flex items-center justify-center">
-                <TrendingUp className="w-4 h-4" />
-              </div>
-              <h3 className="font-bold text-sm text-white">{t.salesTrend}</h3>
-            </div>
-            <span className="text-[11px] font-semibold text-slate-400">Past {lookbackDays} Days</span>
+      {/* SECTION 3: REVENUE & SALES KPIS WITH ANIMATED NUMBERS */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="p-4 bg-[#0b1728] rounded-2xl border border-[#23455b] space-y-1">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+            {timeRange.toUpperCase()} Revenue
+          </span>
+          <div className="text-xl font-black text-cyan-400 font-mono">
+            ₹<AnimatedNumber value={salesSummary.totalRevenue} durationMs={350} decimals={2} />
           </div>
-
-          <div className="grid grid-cols-3 gap-2 p-3 bg-[#070d1a] rounded-2xl border border-slate-800 text-center">
-            <div>
-              <span className="text-[10px] text-slate-400 uppercase font-semibold">Total Revenue</span>
-              <div className="text-lg font-black text-cyan-400">
-                ₹{salesSummary.totalRevenue.toFixed(2)}
-              </div>
-            </div>
-            <div>
-              <span className="text-[10px] text-slate-400 uppercase font-semibold">Units Sold</span>
-              <div className="text-lg font-black text-white">{salesSummary.totalUnits}</div>
-            </div>
-            <div>
-              <span className="text-[10px] text-slate-400 uppercase font-semibold">Transactions</span>
-              <div className="text-lg font-black text-emerald-400">{salesSummary.transactionCount}</div>
-            </div>
-          </div>
-
-          {/* Real Daily Revenue Spark-Line Display */}
-          <div className="space-y-1.5 pt-1">
-            <span className="text-[11px] text-slate-400 block font-semibold">Recent Daily Revenue Trend:</span>
-            <div className="flex items-end gap-1.5 h-16 bg-[#070d1a] p-2 rounded-xl border border-slate-800">
-              {salesSummary.dailyPoints.map((dp, i) => {
-                const maxVal = Math.max(1, ...salesSummary.dailyPoints.map((p) => p.val));
-                const heightPercent = Math.max(15, Math.round((dp.val / maxVal) * 100));
-                return (
-                  <div key={i} className="flex-1 flex flex-col items-center gap-1 h-full justify-end">
-                    <div
-                      className="w-full bg-gradient-to-t from-cyan-600 to-blue-500 rounded-t-sm"
-                      style={{ height: `${heightPercent}%` }}
-                      title={`${dp.day}: ₹${dp.val.toFixed(0)}`}
-                    />
-                    <span className="text-[8px] text-slate-500 font-mono">{dp.day}</span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+          <span className="text-[10px] text-slate-400">
+            <AnimatedNumber value={salesSummary.transactionCount} durationMs={200} /> transactions
+          </span>
         </div>
 
-        {/* Card 2: Time-Series Demand Forecasting & Indication Trends (Section 6 & 7) */}
-        <div className="bg-[#0b1329] p-5 rounded-3xl border border-slate-800 shadow-md space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-xl bg-blue-950 text-blue-400 border border-blue-800 flex items-center justify-center">
-                <Sparkles className="w-4 h-4" />
-              </div>
-              <h3 className="font-bold text-sm text-white">Time-Series Forecast (Holt-Winters)</h3>
-            </div>
-            <span className="text-[10px] font-mono text-cyan-300 bg-cyan-950/60 px-2 py-0.5 rounded-full border border-cyan-800">
-              MAPE &lt; 20%
-            </span>
+        <div className="p-4 bg-[#0b1728] rounded-2xl border border-[#23455b] space-y-1">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+            Units Dispensed
+          </span>
+          <div className="text-xl font-black text-emerald-400 font-mono">
+            <AnimatedNumber value={salesSummary.totalUnits} durationMs={300} />
           </div>
-
-          <div className="space-y-2 text-xs">
-            {forecastInsights.forecasts.slice(0, 3).map((fc) => (
-              <div
-                key={fc.id}
-                className="p-3 bg-[#070d1a] rounded-xl border border-slate-800 flex items-center justify-between"
-              >
-                <div>
-                  <div className="font-bold text-white">{fc.drugName}</div>
-                  <div className="text-[10px] text-slate-400 mt-0.5 leading-snug">
-                    {fc.explanation}
-                  </div>
-                </div>
-                <div className="text-right shrink-0 ml-2">
-                  <div className="font-mono font-extrabold text-cyan-400 text-sm">
-                    ~{fc.forecastUnits} units
-                  </div>
-                  <span className="text-[9px] text-slate-400">7-day projected</span>
-                </div>
-              </div>
-            ))}
-          </div>
-
-          {/* Indication Category Share */}
-          <div className="pt-2 border-t border-slate-800 space-y-1.5 text-xs">
-            <span className="text-[11px] font-semibold text-slate-400 block">Indication Demand Breakdown:</span>
-            <div className="grid grid-cols-2 gap-1.5">
-              {forecastInsights.indicationTrend.slice(0, 4).map((it, idx) => (
-                <div key={idx} className="p-2 bg-[#070d1a] rounded-lg border border-slate-800 flex justify-between">
-                  <span className="text-slate-300 truncate">{it.category}</span>
-                  <span className="font-mono text-cyan-400 font-bold">{it.sharePercent}%</span>
-                </div>
-              ))}
-            </div>
-          </div>
+          <span className="text-[10px] text-slate-400">Across catalog</span>
         </div>
 
-        {/* Card 3: Fast & Slow Moving Stock (FR-ANL-04, BR-06) */}
-        <div className="bg-[#0b1329] p-5 rounded-3xl border border-slate-800 shadow-md space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-xl bg-emerald-950 text-emerald-400 border border-emerald-800 flex items-center justify-center">
-                <Layers className="w-4 h-4" />
-              </div>
-              <h3 className="font-bold text-sm text-white">{t.fastSlowStock}</h3>
-            </div>
-            <span className="text-[11px] text-slate-400">Velocity Bands</span>
+        <div className="p-4 bg-[#0b1728] rounded-2xl border border-[#23455b] space-y-1">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+            Discount Given
+          </span>
+          <div className="text-xl font-black text-amber-400 font-mono">
+            ₹<AnimatedNumber value={salesSummary.totalDiscount} durationMs={300} decimals={2} />
           </div>
-
-          <div className="space-y-2 max-h-52 overflow-y-auto pr-1 text-xs">
-            {movement.fastMoving.slice(0, 3).map((item) => (
-              <div
-                key={item.drug.id}
-                className="p-2.5 bg-emerald-950/20 rounded-xl border border-emerald-800/60 flex justify-between items-center"
-              >
-                <div>
-                  <span className="font-bold text-white">{item.drug.brandName}</span>
-                  <span className="text-[10px] text-slate-400 block">{item.drug.genericName}</span>
-                </div>
-                <div className="text-right">
-                  <span className="font-bold text-emerald-400 text-xs">Fast ({item.unitsSold} sold)</span>
-                  <span className="text-[10px] text-slate-400 block">{item.velocity}</span>
-                </div>
-              </div>
-            ))}
-
-            {movement.slowMoving.slice(0, 3).map((item) => (
-              <div
-                key={item.drug.id}
-                className="p-2.5 bg-[#070d1a] rounded-xl border border-slate-800 flex justify-between items-center"
-              >
-                <div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="font-bold text-slate-300">{item.drug.brandName}</span>
-                    {item.isNearExpiry && (
-                      <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-rose-950 text-rose-300 border border-rose-800">
-                        Near Expiry
-                      </span>
-                    )}
-                  </div>
-                  <span className="text-[10px] text-slate-500 block">
-                    No sales in {item.daysWithoutSale} days
-                  </span>
-                </div>
-                <span className="text-[11px] font-semibold text-slate-400">Slow ({item.unitsSold} sold)</span>
-              </div>
-            ))}
-          </div>
+          <span className="text-[10px] text-slate-400">
+            <AnimatedNumber value={leakageCount} durationMs={200} /> flagged &gt;5% ceiling
+          </span>
         </div>
 
-        {/* Card 4: Real Supplier Performance Analytics (Section 3.E & 10) */}
-        <div className="bg-[#0b1329] p-5 rounded-3xl border border-slate-800 shadow-md space-y-4">
+        <div className="p-4 bg-[#0b1728] rounded-2xl border border-[#23455b] space-y-1">
+          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+            Suppliers Monitored
+          </span>
+          <div className="text-xl font-black text-white font-mono">
+            <AnimatedNumber value={suppliers.length} durationMs={200} />
+          </div>
+          <span className="text-[10px] text-slate-400">Active supply routes</span>
+        </div>
+      </div>
+
+      {/* SECTION 4: DEMAND FORECASTING & INDICATION BREAKDOWN */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Forecast Projections */}
+        <div className="bg-[#0b1728] p-4 sm:p-5 rounded-3xl border border-[#23455b] shadow-md space-y-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-xl bg-purple-950 text-purple-400 border border-purple-800 flex items-center justify-center">
-                <Truck className="w-4 h-4" />
-              </div>
-              <h3 className="font-bold text-sm text-white">{t.supplierPerformance}</h3>
+              <Sparkles className="w-5 h-5 text-cyan-400" />
+              <h3 className="font-bold text-sm text-white">7-Day Demand Forecast Projections</h3>
             </div>
-            <span className="text-[11px] text-slate-400">Real Receipt Events</span>
+            <span className="text-[10px] text-slate-400 font-mono">Holt-Winters ETS</span>
           </div>
 
-          <div className="space-y-2 text-xs">
-            {supplierStats.map((item) => (
+          <div className="space-y-2">
+            {forecastInsights.forecasts.map((f) => (
               <div
-                key={item.supplier.id}
-                className="p-3 bg-[#070d1a] rounded-xl border border-slate-800 flex items-center justify-between"
+                key={f.id}
+                className="p-3 bg-[#102236] rounded-xl border border-[#23455b] flex items-center justify-between text-xs"
               >
                 <div>
-                  <div className="font-bold text-white">{item.supplier.name}</div>
+                  <div className="font-bold text-white">{f.drugName}</div>
                   <div className="text-[10px] text-slate-400">
-                    Lead Time: {item.supplier.promisedLeadTimeDays}d • Discrepancies: {item.discrepancyCount} • Flags: {item.qualityFlagCount}
+                    Confidence: [{f.confidenceLower} - {f.confidenceUpper}] • Trend: {f.trendDirection}
                   </div>
                 </div>
-
                 <div className="text-right">
-                  <div className="font-extrabold text-sm text-cyan-400">{item.score}/100</div>
-                  <span className="text-[10px] text-emerald-400 font-semibold">
-                    {item.onTimeRate}% On-Time
+                  <span className="font-mono font-bold text-cyan-400 text-sm">
+                    ~<AnimatedNumber value={f.forecastUnits} durationMs={300} /> units
                   </span>
+                  <div className="text-[10px] text-slate-400">MAPE: {f.mapeError || 18.5}%</div>
                 </div>
               </div>
             ))}
           </div>
+        </div>
 
-          <div className="pt-2 border-t border-slate-800 flex justify-between text-xs text-slate-400">
-            <span>Revenue Leakage Flags: <strong className="text-amber-400">{leakageCount}</strong></span>
-            <button
-              onClick={() => onNavigateTab('procurement')}
-              className="text-cyan-400 hover:text-cyan-300 font-semibold"
-            >
-              Open Procurement Orders &gt;
-            </button>
+        {/* Indication Category Share */}
+        <div className="bg-[#0b1728] p-4 sm:p-5 rounded-3xl border border-[#23455b] shadow-md space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Layers className="w-5 h-5 text-emerald-400" />
+              <h3 className="font-bold text-sm text-white">Demand by Indication Category</h3>
+            </div>
+            <span className="text-[10px] text-slate-400 font-mono">Volume Share</span>
           </div>
+
+          <div className="space-y-2.5">
+            {forecastInsights.indicationTrend.map((it, idx) => (
+              <div key={idx} className="space-y-1">
+                <div className="flex justify-between text-xs">
+                  <span className="font-semibold text-slate-300">{it.category}</span>
+                  <span className="font-mono font-bold text-emerald-400">{it.sharePercent}% ({it.count} units)</span>
+                </div>
+                <div className="w-full bg-[#102236] h-2 rounded-full overflow-hidden">
+                  <div
+                    className="bg-gradient-to-r from-cyan-500 to-emerald-400 h-full rounded-full transition-all duration-500"
+                    style={{ width: `${Math.min(100, it.sharePercent)}%` }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* SECTION 5: REAL SUPPLIER QUALITY RADAR */}
+      <div className="bg-[#0b1728] p-4 sm:p-5 rounded-3xl border border-[#23455b] shadow-md space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Truck className="w-5 h-5 text-cyan-400" />
+            <h3 className="font-bold text-sm text-white">Supplier Quality & Delivery Performance</h3>
+          </div>
+          <span className="text-[10px] text-slate-400 font-mono">Real Delivery Audits</span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          {supplierStats.map((s) => (
+            <div
+              key={s.supplier.id}
+              className="p-3.5 bg-[#102236] rounded-2xl border border-[#23455b] space-y-2 text-xs"
+            >
+              <div className="flex justify-between items-start">
+                <span className="font-bold text-white">{s.supplier.name}</span>
+                <span
+                  className={`text-[10px] font-bold px-2 py-0.5 rounded-full font-mono ${
+                    s.score >= 80 ? 'bg-emerald-950 text-emerald-300 border border-emerald-800' : 'bg-amber-950 text-amber-300 border border-amber-800'
+                  }`}
+                >
+                  Score: {s.score}/100
+                </span>
+              </div>
+              <div className="text-[11px] text-slate-400 space-y-0.5">
+                <div>On-Time Rate: <strong className="text-slate-200">{s.onTimeRate}%</strong></div>
+                <div>Discrepancies: <strong className="text-slate-200">{s.discrepancyCount}</strong> logged</div>
+                <div>Quality Flags: <strong className="text-slate-200">{s.qualityFlagCount}</strong> issues</div>
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     </div>

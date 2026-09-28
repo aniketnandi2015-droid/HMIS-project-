@@ -341,3 +341,65 @@ export interface SmartScanMatchResult {
   notes: string;
   expiryWarning?: string;
 }
+
+// Commercial-Style POS Cart State (Section 5)
+export type CartSafetyStatus =
+  | 'pending'
+  | 'clear'
+  | 'prescription_required'
+  | 'safety_review_required'
+  | 'blocked';
+
+export interface CartItem {
+  id: string; // Line item unique identifier
+  drugId: string;
+  drugName: string;
+  genericName: string;
+  strength: string;
+  dosageForm: string;
+  selectedBatchId: string;
+  batchNumber: string;
+  expiryDate: string;
+  unitPrice: number;
+  quantity: number;
+  maxAvailableQuantity: number;
+  discountPercent: number;
+  discountAmount: number;
+  extendedValue: number;
+  visitType: VisitType;
+  prescriptionSighted: boolean;
+  indicationCategory?: IndicationCategory;
+  safetyStatus: CartSafetyStatus;
+  safetyConflicts?: ContraindicationReference[];
+  stockStatus: 'available' | 'low' | 'out_of_stock';
+}
+
+// Stock Discrepancy & Controlled Physical-Count Reconciliation (Section 10)
+export type DiscrepancySeverity = 'none' | 'minor' | 'material' | 'significant';
+
+export type DiscrepancyReasonCode =
+  | 'physical_count_correction'
+  | 'damage_breakage'
+  | 'expired_stock'
+  | 'missing_unaccounted'
+  | 'receiving_discrepancy'
+  | 'data_entry_correction'
+  | 'other';
+
+export interface StockDiscrepancyRecord {
+  id: string;
+  drugId: string;
+  drugName: string;
+  batchId: string;
+  batchNumber: string;
+  systemQuantity: number;
+  physicalQuantity: number;
+  discrepancyDelta: number; // Physical - System
+  discrepancyPercent: number; // abs(Delta) / max(System, 1) * 100
+  direction: 'shortage' | 'excess' | 'none';
+  severity: DiscrepancySeverity;
+  reasonCode: DiscrepancyReasonCode;
+  notes?: string;
+  timestamp: string;
+  reconciled: boolean;
+}

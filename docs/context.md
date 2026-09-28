@@ -2,7 +2,7 @@
 
 ## 0. Document Role
 This file is the repository-level implementation context for coding agents working on PharmaAssist.
-It aligns the approved intent of the PharmaAssist SRS (v2.2) and SDD (v0.2) into operational rules for coding, debugging, testing, code review, CI/CD, GitHub, and deployment.
+It aligns the approved intent of the PharmaAssist SRS (v2.3) and SDD (v0.3) into operational rules for coding, debugging, testing, code review, CI/CD, GitHub, and deployment.
 
 ---
 
@@ -20,17 +20,18 @@ It aligns the approved intent of the PharmaAssist SRS (v2.2) and SDD (v0.2) into
 ---
 
 ## 2. Controlled Operational Extensions
+- **Commercial-Style POS Cart:** Staging items in `CartItem` state (`Detect -> Product card -> Add to Cart -> Continue shopping`). Consolidated checkout with blocking safety verification before atomic dispatch. Adding items never mutates stock.
+- **Controlled Stock Discrepancy Reconciliation:** Physical-count verification calculates delta and materiality percentage (minor <=5%, material <=10%, significant >10%). Mandatory reason codes, mandatory notes for significant discrepancies or reason `other`. Mutates stock strictly via reason-coded adjustment path (`apply_stock_adjustment`).
 - **Smart OCR Package Scanner:** Uses `SmartScanService` for packaging text extraction and candidate matching against `DrugMaster`. Requires operator confirmation.
-- **Time-Series Forecasting:** Uses `TimeSeriesForecastService` with Holt-Winters / ETS, zero-padded continuous timelines, backtest MAPE scoring, and cold-start fallback (BR-05 -> BR-01).
+- **Time-Series Demand Forecasting:** Uses `TimeSeriesForecastService` with Holt-Winters / ETS, zero-padded continuous timelines, backtest MAPE scoring, and cold-start fallback (BR-05 -> BR-01).
 - **Predictive Cross-Selling:** Uses `CrossSellService` with conditional probability $P(B|A)$, support count, and stock availability verification.
-- **Procurement & Inventory Alerts:** Deduplicates on-order stock and provides deep links from alerts to actionable tabs.
-- **Visual Design:** Dark navy theme (`#0a0f1d`) and INR currency (`₹`).
+- **Visual Design & Motion:** Dark teal/navy theme (`#083f4b`, `#0b1728`, `#23455b`), smooth number interpolation (`AnimatedNumber`), and `prefers-reduced-motion` compliance.
 
 ---
 
 ## 3. Engineering & Deployment Guidelines
 - **Language & Runtime:** TypeScript (strict mode), Node.js LTS, React / Vite.
-- **Styling:** Tailwind CSS with dark theme tokens (`bg-[#0a0f1d]`, `bg-[#0f172a]`, `text-cyan-400`, `border-slate-800`).
-- **Database:** Supabase PostgreSQL with schema migrations in `supabase/migrations/` and RPC procedures.
+- **Styling:** Tailwind CSS with semantic design tokens.
+- **Database:** Supabase PostgreSQL with schema migrations and RPC procedures.
 - **Testing:** Vitest with pure domain tests in `tests/unit/` and integration tests in `tests/integration/`. Run `npm test` before committing.
 - **Git Push Policy:** GitHub enforces private email protection (`GH007`), so commits must use `aniketnandi2015-droid@users.noreply.github.com`.
