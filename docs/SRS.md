@@ -61,6 +61,18 @@ Document version: 2.3 (Single-Operator Scope; Mobile-First Web Platform; POS Car
 - **NFR-MOT-01 (Fluid Motion System):** Smooth cubic-out number interpolation via `AnimatedNumber` (300–400ms), active touch feedback, and restrained state pulses.
 - **NFR-MOT-02 (Reduced-Motion Compliance):** Strictly respects `@media (prefers-reduced-motion: reduce)`, immediately snapping values to final targets without visual distortion.
 
+#### 2.8 Pharmaceutical Tax Invoice Generator & Live Counter Stock Availability (FR-INV-07, FR-POS-10)
+- **FR-POS-10 (Automated Post-Dispatch Invoice Generator):** Upon successful completion of either single-item quick dispatch or consolidated basket checkout, system automatically generates and displays a compliant pharmaceutical Tax Invoice modal (`InvoiceGeneratorModal`).
+  - Itemized table with Product Name, Generic composition, HSN code (`3004`), Batch No, Expiry Date, Quantity, MRP, and Extended Value.
+  - Indian GST breakdown (Taxable Base, CGST @ 6%, SGST @ 6%, Total GST @ 12% included in MRP).
+  - Indian Rupee monetary representation and verbal amount transcription (`numberToWordsINR`).
+  - Drug License No (`DL-20B/21B-WB/2026/88921`), GSTIN, FSSAI, and Dispensary contact identity.
+  - Dual layout toggle: Standard detailed Retail Tax Invoice (A4/half-page printable) and ESC/POS thermal slip (80mm).
+- **FR-INV-07 (Live Counter Stock Availability):**
+  - Displays real-time stock availability, total units across batches, selected batch balance, and post-dispense stock forecast immediately when browsing, searching, or configuring a drug in Counter/POS tab.
+  - Highlights status badges (`● In Stock`, `● Low Stock`, `● Out of Stock`) and warns if requested quantity exceeds available batch stock.
+  - Provides quick dispensary catalog grid for instant selection and stock visibility when search input is empty.
+
 ---
 
 ### 3. Non-Functional Targets & Invariants

@@ -12,6 +12,8 @@ import {
   Clock,
   ShoppingCart,
   AlertTriangle,
+  Package,
+  Zap,
 } from 'lucide-react';
 import {
   DrugMaster,
@@ -68,7 +70,7 @@ export const CounterPOS: React.FC<CounterPOSProps> = ({
   onOpenCart,
   scannedMatch,
   onClearScannedMatch,
-  onDispatch: _onDispatch,
+  onDispatch,
   onLogUnmetDemand,
   onOpenScanner,
   onPrintReceipt,
@@ -240,6 +242,43 @@ export const CounterPOS: React.FC<CounterPOSProps> = ({
     setPrescriptionSighted(false);
   };
 
+  // Direct Quick Dispatch & Invoice Generator Trigger
+  const handleDirectDispatch = () => {
+    if (!selectedDrug || !selectedBatch) return;
+
+    // Safety Gate Check (FR-POS-02 / NFR-SAFE-01)
+    if (safetyResult.hasConflict) {
+      onTriggerSafetyAlert(selectedDrug, safetyResult.conflicts);
+      if (safetyResult.isDispatchBlocked) {
+        return;
+      }
+    }
+
+    const res = onDispatch(
+      selectedDrug,
+      selectedBatch,
+      quantity,
+      selectedDrug.listPrice,
+      discountPercent,
+      prescriptionSighted,
+      visitType,
+      selectedIndication
+    );
+
+    if (res.success && res.transaction) {
+      setCompletedTx(res.transaction);
+      onPrintReceipt(res.transaction); // Automatically opens the invoice generator modal!
+      setSelectedDrug(null);
+      setSelectedBatch(null);
+      setSearchQuery('');
+      setQuantity(1);
+      setDiscountPercent(0);
+      setPrescriptionSighted(false);
+    } else if (res.error) {
+      alert(`Dispatch failed: ${res.error}`);
+    }
+  };
+
   // Cart summary totals
   const cartTotals = useMemo(() => CartService.calculateTotals(cartItems), [cartItems]);
 
@@ -375,6 +414,65 @@ export const CounterPOS: React.FC<CounterPOSProps> = ({
             </button>
           </div>
         )}
+
+        {/* Quick Add Catalog with Live Stock Availability Badges */}
+        {!selectedDrug && searchQuery.trim().length === 0 && (
+          <div className="space-y-2.5 pt-2 border-t border-[#23455b]/60">
+            <div className="flex items-center justify-between text-xs font-semibold text-slate-400">
+              <span className="flex items-center gap-1.5 text-cyan-400">
+                <Package className="w-3.5 h-3.5" /> Quick Dispensary Catalog (Live Stock)
+              </span>
+              <span className="text-[10px] text-slate-500 font-mono">Tap medicine to select & dispense</span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+              {drugs.slice(0, 6).map((drug) => {
+                const stockQty = batches
+                  .filter((b) => b.drugId === drug.id)
+                  .reduce((acc, b) => acc + b.quantityOnHand, 0);
+
+                return (
+                  <button
+                    key={drug.id}
+                    type="button"
+                    onClick={() => handleSelectDrug(drug)}
+                    className="p-3 rounded-2xl bg-[#102236] hover:bg-[#152e4a] border border-[#23455b] text-left transition cursor-pointer touch-active flex flex-col justify-between space-y-2 group"
+                  >
+                    <div className="flex justify-between items-start w-full">
+                      <div className="font-bold text-white text-xs truncate max-w-[140px] group-hover:text-cyan-300">
+                        {drug.brandName}
+                      </div>
+                      <span className="font-mono text-xs font-bold text-cyan-400">
+                        ₹{drug.listPrice.toFixed(0)}
+                      </span>
+                    </div>
+
+                    <div className="text-[11px] text-slate-400 truncate w-full">
+                      {drug.genericName} • {drug.strength}
+                    </div>
+
+                    <div className="flex items-center justify-between w-full pt-1.5 border-t border-[#23455b]/50 text-[10px]">
+                      <span className="text-slate-500 px-1.5 py-0.2 rounded bg-[#0b1728] border border-[#23455b]">
+                        {drug.dosageForm}
+                      </span>
+                      <span
+                        className={`font-bold px-2 py-0.5 rounded-full border ${
+                          stockQty > 20
+                            ? 'bg-emerald-950/80 text-emerald-300 border-emerald-800/80'
+                            : stockQty > 0
+                            ? 'bg-amber-950/80 text-amber-300 border-amber-800/80'
+                            : 'bg-rose-950/80 text-rose-300 border-rose-800/80'
+                        }`}
+                      >
+                        {stockQty > 0 ? `${stockQty} in stock` : 'Out of stock'}
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* 2. Detected / Selected Medicine Card (Section 5 & 6) */}
@@ -406,6 +504,69 @@ export const CounterPOS: React.FC<CounterPOSProps> = ({
             >
               Cancel
             </button>
+          </div>
+
+          {/* Prominent Live Stock Availability Display */}
+          <div className="p-3.5 bg-gradient-to-r from-[#102236] to-[#142c45] rounded-2xl border border-cyan-500/30 space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Package className="w-4 h-4 text-cyan-400" />
+                <span className="text-xs font-bold text-white uppercase tracking-wider">
+                  Live Stock Availability
+                </span>
+              </div>
+              <span
+                className={`text-[11px] font-black px-2.5 py-0.5 rounded-full border ${
+                  totalStockForSelected > 20
+                    ? 'bg-emerald-950/80 text-emerald-300 border-emerald-700/80'
+                    : totalStockForSelected > 0
+                    ? 'bg-amber-950/80 text-amber-300 border-amber-700/80'
+                    : 'bg-rose-950/80 text-rose-300 border-rose-700/80'
+                }`}
+              >
+                {totalStockForSelected > 20
+                  ? '● In Stock'
+                  : totalStockForSelected > 0
+                  ? '● Low Stock'
+                  : '● Out of Stock'}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-3 gap-2 text-center pt-1 text-xs">
+              <div className="p-2 bg-[#0b1728] rounded-xl border border-[#23455b]">
+                <span className="text-[10px] text-slate-400 block">Total In Stock</span>
+                <span className="font-mono font-black text-cyan-300 text-sm">
+                  <AnimatedNumber value={totalStockForSelected} /> units
+                </span>
+              </div>
+              <div className="p-2 bg-[#0b1728] rounded-xl border border-[#23455b]">
+                <span className="text-[10px] text-slate-400 block">Selected Batch Qty</span>
+                <span className="font-mono font-black text-emerald-400 text-sm">
+                  {selectedBatch ? `${selectedBatch.quantityOnHand} units` : '-'}
+                </span>
+              </div>
+              <div className="p-2 bg-[#0b1728] rounded-xl border border-[#23455b]">
+                <span className="text-[10px] text-slate-400 block">Balance After Dispense</span>
+                <span
+                  className={`font-mono font-black text-sm ${
+                    (selectedBatch?.quantityOnHand || 0) - quantity < 0
+                      ? 'text-rose-400'
+                      : 'text-slate-200'
+                  }`}
+                >
+                  {selectedBatch ? Math.max(0, selectedBatch.quantityOnHand - quantity) : 0} units
+                </span>
+              </div>
+            </div>
+
+            {selectedBatch && quantity > selectedBatch.quantityOnHand && (
+              <div className="p-2 bg-rose-950/80 border border-rose-800 rounded-xl text-rose-200 text-xs flex items-center gap-1.5">
+                <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+                <span>
+                  Insufficient stock! Selected batch only has {selectedBatch.quantityOnHand} units.
+                </span>
+              </div>
+            )}
           </div>
 
           {/* Safety Warning Banner if conflict */}
@@ -553,16 +714,28 @@ export const CounterPOS: React.FC<CounterPOSProps> = ({
             </div>
           </div>
 
-          {/* Add to Cart Primary CTA */}
-          <button
-            type="button"
-            disabled={!selectedBatch || selectedBatch.quantityOnHand <= 0}
-            onClick={handleAddToCart}
-            className="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 disabled:opacity-40 text-white font-extrabold text-sm flex items-center justify-center gap-2 shadow-lg shadow-cyan-900/40 transition cursor-pointer touch-active min-h-[48px]"
-          >
-            <ShoppingCart className="w-4 h-4" />
-            <span>Add to Customer Basket (₹{(selectedDrug.listPrice * quantity).toFixed(2)})</span>
-          </button>
+          {/* Dual Action CTAs: Add to Basket OR Instant Dispatch & Issue Invoice */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+            <button
+              type="button"
+              disabled={!selectedBatch || selectedBatch.quantityOnHand <= 0 || quantity > selectedBatch.quantityOnHand}
+              onClick={handleAddToCart}
+              className="py-3 px-4 rounded-xl bg-[#102236] hover:bg-[#183659] border border-cyan-500/40 text-cyan-300 font-bold text-xs sm:text-sm flex items-center justify-center gap-2 transition cursor-pointer touch-active min-h-[46px]"
+            >
+              <ShoppingCart className="w-4 h-4 text-cyan-400" />
+              <span>Add to Basket (₹{(selectedDrug.listPrice * quantity).toFixed(2)})</span>
+            </button>
+
+            <button
+              type="button"
+              disabled={!selectedBatch || selectedBatch.quantityOnHand <= 0 || quantity > selectedBatch.quantityOnHand}
+              onClick={handleDirectDispatch}
+              className="py-3 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-cyan-600 hover:from-emerald-500 hover:to-cyan-500 disabled:opacity-40 text-white font-extrabold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-lg shadow-emerald-950/40 transition cursor-pointer touch-active min-h-[46px]"
+            >
+              <Zap className="w-4 h-4 text-amber-300" />
+              <span>Dispatch & Issue Invoice</span>
+            </button>
+          </div>
         </div>
       )}
 

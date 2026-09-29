@@ -94,6 +94,16 @@ flowchart TD
 - Cubic-out numerical interpolation (`AnimatedNumber`) over 300–400ms for KPIs, cart quantities, and totals.
 - Reduced-motion mode (`@media (prefers-reduced-motion: reduce)`) gracefully bypasses animation duration to avoid cognitive strain.
 
+#### 2.4 Pharmaceutical Tax Invoice Generator & Live Counter Stock Architecture
+- **Invoice Presentation Layer (`InvoiceGeneratorModal`):**
+  - Displays printable, compliant Indian retail pharmaceutical tax invoice immediately following single dispatch or consolidated cart checkout.
+  - Automatically computes taxable base, CGST (6%), SGST (6%), and converts net payable to words (`numberToWordsINR`).
+  - Supports dual formats: Retail Tax Invoice (A4 / Half-Page) with DL number, GSTIN, and Pharmacist signature stamp, and ESC/POS thermal slip (80mm).
+- **Counter Live Stock Display (`CounterPOS`):**
+  - Aggregates multi-batch quantities per drug, rendering live stock pills (`In Stock`, `Low Stock`, `Out of Stock`).
+  - Displays live capacity meters and remaining post-dispense stock forecasts during quantity selection.
+  - Provides quick dispensary catalog grid for instant selection and stock visibility when search input is empty.
+
 ---
 
 ### 3. Database Schema & RPC Functions

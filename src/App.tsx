@@ -7,7 +7,7 @@ import { ProcurementScreen } from './components/ProcurementScreen';
 import { LoginModal } from './components/LoginModal';
 import { ContraindicationAlertModal } from './components/ContraindicationAlertModal';
 import { BarcodeScannerModal } from './components/BarcodeScannerModal';
-import { ReceiptPrintModal } from './components/ReceiptPrintModal';
+import { InvoiceGeneratorModal } from './components/InvoiceGeneratorModal';
 import { WalkthroughModal } from './components/WalkthroughModal';
 import { CartDrawer } from './components/CartDrawer';
 import { StockDiscrepancyModal } from './components/StockDiscrepancyModal';
@@ -306,11 +306,10 @@ export const App: React.FC = () => {
       LocalStorageAdapter.saveSyncQueue(newQueue);
     }
 
-    // Clear cart and show receipt print modal
+    // Clear cart and show tax invoice generator modal
     setCartItems([]);
     setIsCartOpen(false);
     setReceiptPrintTx(consolidatedTx);
-    alert(`Basket successfully dispatched! Transaction ${txId} recorded with ${cartItems.length} items.`);
   };
 
   // Single Item Dispatch (Backward compatibility & quick direct dispatch)
@@ -393,6 +392,7 @@ export const App: React.FC = () => {
         });
     }
 
+    setReceiptPrintTx(newTx);
     return { success: true, transaction: newTx };
   };
 
@@ -721,9 +721,9 @@ export const App: React.FC = () => {
         />
       )}
 
-      {/* POS Receipt Modal */}
+      {/* Pharmaceutical Tax Invoice Generator Modal */}
       {receiptPrintTx && (
-        <ReceiptPrintModal
+        <InvoiceGeneratorModal
           transaction={receiptPrintTx}
           onClose={() => setReceiptPrintTx(null)}
         />
