@@ -6,6 +6,7 @@ import {
   ShieldAlert,
   Sparkles,
   Scale,
+  TrendingUp,
 } from 'lucide-react';
 import {
   DrugMaster,
@@ -52,8 +53,15 @@ export const InsightsScreen: React.FC<InsightsScreenProps> = ({
 
   // 1. Sales Trend Real Daily Series
   const salesSummary = useMemo(() => {
-    const cutoff = Date.now() - lookbackDays * 24 * 60 * 60 * 1000;
-    const filteredTxs = transactions.filter((tx) => new Date(tx.timestamp).getTime() >= cutoff);
+    const timestamps = transactions.map((t) => new Date(t.timestamp).getTime()).filter((t) => !isNaN(t));
+    const latestTime = timestamps.length > 0 ? Math.max(...timestamps) : Date.now();
+    const referenceTime = Math.max(Date.now(), latestTime);
+    const cutoff = referenceTime - lookbackDays * 24 * 60 * 60 * 1000;
+
+    let filteredTxs = transactions.filter((tx) => new Date(tx.timestamp).getTime() >= cutoff);
+    if (filteredTxs.length === 0 && transactions.length > 0) {
+      filteredTxs = transactions;
+    }
 
     let totalRevenue = 0;
     let totalDiscount = 0;
@@ -84,6 +92,23 @@ export const InsightsScreen: React.FC<InsightsScreenProps> = ({
       dailyPoints: dailyPoints.slice(-10),
     };
   }, [transactions, lookbackDays]);
+
+  // Fast-Moving Product Performance (Transformed Analytics)
+  const fastMovingProducts = useMemo(() => {
+    const counts: Record<string, { name: string; units: number; revenue: number; drugId: string }> = {};
+    transactions.forEach((tx) => {
+      tx.items?.forEach((it) => {
+        if (!counts[it.drugId]) {
+          counts[it.drugId] = { name: it.drugName || 'Item', units: 0, revenue: 0, drugId: it.drugId };
+        }
+        counts[it.drugId].units += it.quantity;
+        counts[it.drugId].revenue += it.extendedValue;
+      });
+    });
+    return Object.values(counts)
+      .sort((a, b) => b.units - a.units)
+      .slice(0, 5);
+  }, [transactions]);
 
   // 2. Actionable Drug-Specific Inventory Alerts
   const drugAlerts = useMemo(() => {
@@ -396,6 +421,62 @@ export const InsightsScreen: React.FC<InsightsScreenProps> = ({
           </div>
         </div>
       </div>
+
+      {/* SECTION 4.5: FAST-MOVING MEDICINES (TRANSFORMED DISPENSE VELOCITY) */}
+      {fastMovingProducts.length > 0 && (
+        <div className="bg-[#0b1728] p-4 sm:p-5 rounded-3xl border border-[#23455b] shadow-md space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <TrendingUp className="w-5 h-5 text-emerald-400" />
+              <h3 className="font-bold text-sm text-white">Fast-Moving Medicines (Dispense Velocity)</h3>
+            </div>
+            <span className="text-[10px] text-emerald-400 font-mono font-bold bg-emerald-950/60 px-2 py-0.5 rounded-full border border-emerald-800">
+              Live Counter Feed
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {fastMovingProducts.map((p, idx) => {
+              const drugBatches = batches.filter((b) => b.drugId === p.drugId && b.quantityOnHand > 0);
+              const currentStock = drugBatches.reduce((acc, b) => acc + b.quantityOnHand, 0);
+              return (
+                <div
+                  key={idx}
+                  className="p-3.5 bg-[#102236] rounded-2xl border border-[#23455b] flex flex-col justify-between text-xs space-y-2.5"
+                >
+                  <div className="flex items-start justify-between">
+                    <div>
+                      <div className="font-bold text-white text-xs">{p.name}</div>
+                      <div className="text-[10px] text-slate-400 mt-0.5">
+                        Stock Remaining:{' '}
+                        <span
+                          className={`font-mono font-bold ${
+                            currentStock > 10 ? 'text-emerald-400' : currentStock > 0 ? 'text-amber-400' : 'text-rose-400'
+                          }`}
+                        >
+                          {currentStock} units
+                        </span>
+                      </div>
+                    </div>
+                    <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-cyan-950 text-cyan-300 border border-cyan-800">
+                      #{idx + 1}
+                    </span>
+                  </div>
+
+                  <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between">
+                    <span className="text-slate-400 text-[11px]">
+                      Dispensed: <strong className="text-white font-mono">{p.units} units</strong>
+                    </span>
+                    <span className="text-emerald-400 font-mono font-bold text-xs">
+                      ₹{p.revenue.toLocaleString('en-IN', { minimumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* SECTION 5: REAL SUPPLIER QUALITY RADAR */}
       <div className="bg-[#0b1728] p-4 sm:p-5 rounded-3xl border border-[#23455b] shadow-md space-y-3">
